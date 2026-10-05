@@ -144,15 +144,62 @@ def call_gemini_api(api_key, model, prompt_text):
                 return parts[0].get("text", "")
     return "APIからの応答が空でした。"
 
-def build_agy_cmd(agy_bin, prompt_text, model):
+def build_agy_cmd(agy_bin, prompt_text, model=None, effort=None):
     cmd = [agy_bin, "-p", prompt_text]
     if model:
         cmd.extend(["--model", model])
-        # gemini-3.* または flash / thinking モデルは --effort が必須
-        m_lower = model.lower()
-        if "gemini-3" in m_lower or "flash" in m_lower or "thinking" in m_lower:
-            cmd.extend(["--effort", "medium"])
+    if effort:
+        cmd.extend(["--effort", effort])
     return cmd
+
+def execute_agy(cmd, session_id, agy_env):
+    log_debug(f"Spawning agy: {cmd}")
+    err_log_path = "/tmp/agy_cmd_err.log"
+    full_output = ""
+    err_msg = ""
+    retcode = 0
+    try:
+        with open(err_log_path, "w+", encoding="utf-8", errors="replace") as err_file:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=err_file,
+                text=True,
+                bufsize=1,
+                env=agy_env
+            )
+            for line in iter(proc.stdout.readline, ''):
+                if not line:
+                    break
+                full_output += line
+                send_response({
+                    "jsonrpc": "2.0",
+                    "method": "session/update",
+                    "params": {
+                        "sessionId": session_id,
+                        "update": {
+                            "sessionUpdate": "agent_message_chunk",
+                            "content": {
+                                "type": "text",
+                                "text": line
+                            }
+                        }
+                    }
+                })
+            proc.stdout.close()
+            retcode = proc.wait()
+        if retcode != 0:
+            try:
+                with open(err_log_path, "r", encoding="utf-8", errors="replace") as ef:
+                    err_msg = ef.read().strip()
+            except Exception:
+                pass
+            log_debug(f"agy exited with code {retcode}: {err_msg}")
+    except Exception as e:
+        log_debug(f"agy execution error: {e}")
+        err_msg = str(e)
+        retcode = -1
+    return retcode, full_output, err_msg
 
 def get_config_options():
     return [
@@ -337,104 +384,23 @@ def main():
                 })
             else:
                 if agy_bin:
+                    # 1回目: 選択モデルで実行 (--effort は指定しない)
                     cmd = build_agy_cmd(agy_bin, user_text, current_model)
-                    log_debug(f"Spawning agy: {cmd}")
-                    err_log_path = "/tmp/agy_cmd_err.log"
-                    try:
-                        with open(err_log_path, "w+", encoding="utf-8", errors="replace") as err_file:
-                            proc = subprocess.Popen(
-                                cmd,
-                                stdout=subprocess.PIPE,
-                                stderr=err_file,
-                                text=True,
-                                bufsize=1,
-                                env=agy_env
-                            )
-                            full_output = ""
-                            for line in iter(proc.stdout.readline, ''):
-                                if not line:
-                                    break
-                                full_output += line
-                                send_response({
-                                    "jsonrpc": "2.0",
-                                    "method": "session/update",
-                                    "params": {
-                                        "sessionId": session_id,
-                                        "update": {
-                                            "sessionUpdate": "agent_message_chunk",
-                                            "content": {
-                                                "type": "text",
-                                                "text": line
-                                            }
-                                        }
-                                    }
-                                })
-                            proc.stdout.close()
-                            proc.wait()
+                    retcode, full_output, err_msg = execute_agy(cmd, session_id, agy_env)
 
-                        if proc.returncode != 0:
-                            err_msg = ""
-                            try:
-                                with open(err_log_path, "r", encoding="utf-8", errors="replace") as ef:
-                                    err_msg = ef.read().strip()
-                            except Exception:
-                                pass
-                            log_debug(f"agy exited with code {proc.returncode}: {err_msg}")
+                    # 失敗時: --effort が必須と要求された場合のみ effort を付与してリトライ
+                    if retcode != 0 and not full_output and "requires --effort" in err_msg:
+                        cmd = build_agy_cmd(agy_bin, user_text, current_model, effort="medium")
+                        log_debug(f"Retrying with effort: {cmd}")
+                        retcode, full_output, err_msg = execute_agy(cmd, session_id, agy_env)
 
-                            # --effort 不足だった場合のリトライ
-                            if "requires --effort" in err_msg and "--effort" not in cmd:
-                                cmd.extend(["--effort", "medium"])
-                                log_debug(f"Retrying agy with effort: {cmd}")
-                                with open(err_log_path, "w+", encoding="utf-8", errors="replace") as ef2:
-                                    proc2 = subprocess.Popen(
-                                        cmd,
-                                        stdout=subprocess.PIPE,
-                                        stderr=ef2,
-                                        text=True,
-                                        bufsize=1,
-                                        env=agy_env
-                                    )
-                                    for line in iter(proc2.stdout.readline, ''):
-                                        if not line:
-                                            break
-                                        full_output += line
-                                        send_response({
-                                            "jsonrpc": "2.0",
-                                            "method": "session/update",
-                                            "params": {
-                                                "sessionId": session_id,
-                                                "update": {
-                                                    "sessionUpdate": "agent_message_chunk",
-                                                    "content": {
-                                                        "type": "text",
-                                                        "text": line
-                                                    }
-                                                }
-                                            }
-                                        })
-                                    proc2.stdout.close()
-                                    proc2.wait()
-                                    if proc2.returncode != 0:
-                                        with open(err_log_path, "r", encoding="utf-8", errors="replace") as ef3:
-                                            err_msg = ef3.read().strip()
+                    # 失敗時: モデル選択・effort未対応・無効モデル等の場合、モデルフラグなし（CLI デフォルト）でリトライ
+                    if retcode != 0 and not full_output and any(k in err_msg for k in ["invalid model selection", "not supported", "unknown model", "no model configuration"]):
+                        log_debug(f"Retrying with default model (no flags) due to model error: {err_msg}")
+                        cmd = [agy_bin, "-p", user_text]
+                        retcode, full_output, err_msg = execute_agy(cmd, session_id, agy_env)
 
-                            if not full_output:
-                                send_response({
-                                    "jsonrpc": "2.0",
-                                    "method": "session/update",
-                                    "params": {
-                                        "sessionId": session_id,
-                                        "update": {
-                                            "sessionUpdate": "agent_message_chunk",
-                                            "content": {
-                                                "type": "text",
-                                                "text": f"【Antigravity CLI エラー】\n{err_msg}"
-                                            }
-                                        }
-                                    }
-                                })
-                    except Exception as e:
-                        log_debug(f"agy execution error: {e}")
+                    if retcode != 0 and not full_output:
                         send_response({
                             "jsonrpc": "2.0",
                             "method": "session/update",
@@ -444,7 +410,7 @@ def main():
                                     "sessionUpdate": "agent_message_chunk",
                                     "content": {
                                         "type": "text",
-                                        "text": f"【Antigravity 呼び出しエラー】\n{str(e)}"
+                                        "text": f"【Antigravity CLI エラー】\n{err_msg}"
                                     }
                                 }
                             }
