@@ -59,9 +59,12 @@ def send_response(obj):
 
 # モデル定義 (デフォルト: Gemini 3.8 Flash)
 MODELS_LIST = [
-    {"modelId": "gemini-3.8-flash", "name": "Gemini 3.8 Flash"},
+    {"modelId": "gemini-3.8-flash", "name": "Gemini 3.8 Flash (Default)"},
     {"modelId": "claude-sonnet-4.6", "name": "Claude Sonnet 4.6"},
-    {"modelId": "claude-opus-4.6", "name": "Claude Opus 4.6"}
+    {"modelId": "claude-opus-4.6", "name": "Claude Opus 4.6"},
+    # 既存・過去スレッド互換用
+    {"modelId": "gemini-2.5-pro", "name": "Gemini 2.5 Pro"},
+    {"modelId": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"}
 ]
 
 current_model = "gemini-3.8-flash"
@@ -79,6 +82,21 @@ def get_config_options():
             ]
         }
     ]
+
+def get_session_setup_result(session_id=None):
+    res = {
+        "models": {
+            "currentModelId": current_model,
+            "availableModels": MODELS_LIST
+        },
+        "configOptions": get_config_options(),
+        "availableCommands": [
+            {"name": "compact", "description": "Compact conversation history"}
+        ]
+    }
+    if session_id:
+        res["sessionId"] = session_id
+    return res
 
 def main():
     global current_model
@@ -143,17 +161,7 @@ def main():
             send_response({
                 "jsonrpc": "2.0",
                 "id": msg_id,
-                "result": {
-                    "sessionId": "agy-session-arm64",
-                    "models": {
-                        "currentModelId": current_model,
-                        "availableModels": MODELS_LIST
-                    },
-                    "configOptions": get_config_options(),
-                    "availableCommands": [
-                        {"name": "compact", "description": "Compact conversation history"}
-                    ]
-                }
+                "result": get_session_setup_result("agy-session-arm64")
             })
         elif method == "session/set_config_option":
             params = req.get("params", {})
@@ -184,14 +192,11 @@ def main():
                 "id": msg_id,
                 "result": {}
             })
-        elif method == "session/load":
+        elif method in ("session/load", "session/resume"):
             send_response({
                 "jsonrpc": "2.0",
                 "id": msg_id,
-                "result": {
-                    "sessionId": req.get("params", {}).get("sessionId", "agy-session-arm64"),
-                    "messages": []
-                }
+                "result": get_session_setup_result()
             })
         elif method == "session/prompt":
             session_id = req.get("params", {}).get("sessionId", "agy-session-arm64")
