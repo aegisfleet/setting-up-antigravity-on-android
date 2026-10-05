@@ -57,16 +57,14 @@ def send_response(obj):
     sys.stdout.write(raw + "\n")
     sys.stdout.flush()
 
-# 最新のモデル定義
+# モデル定義 (デフォルト: Gemini 3.8 Flash)
 MODELS_LIST = [
-    {"modelId": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (Recommended)"},
-    {"modelId": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"},
-    {"modelId": "gemini-1.5-pro", "name": "Gemini 1.5 Pro"},
-    {"modelId": "gemini-1.5-flash", "name": "Gemini 1.5 Flash"},
-    {"modelId": "claude-3-7-sonnet", "name": "Claude 3.7 Sonnet"}
+    {"modelId": "gemini-3.8-flash", "name": "Gemini 3.8 Flash"},
+    {"modelId": "claude-sonnet-4.6", "name": "Claude Sonnet 4.6"},
+    {"modelId": "claude-opus-4.6", "name": "Claude Opus 4.6"}
 ]
 
-current_model = "gemini-2.5-pro"
+current_model = "gemini-3.8-flash"
 
 def get_config_options():
     return [
