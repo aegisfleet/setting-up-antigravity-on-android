@@ -34,19 +34,10 @@ echo "Open the following link to authenticate the ACP server: $1" >&2
 EOF
 chmod +x "$XDG_OPEN_BIN"
 
-# 4. Create Smart Wrapper for agy_acp_server.par
-# T3 Code は PATH 上の "agy_acp_server.par" と同じディレクトリにある "localharness_external" を探索する
-ACP_PAR="/usr/local/bin/agy_acp_server.par"
-ACP_LINK="/usr/local/bin/agy_acp_server"
-HARNESS="/usr/local/bin/localharness_external"
-
-cat << 'EOF' > "$ACP_PAR"
-#!/usr/bin/env bash
-# Antigravity ACP Server for Android / PRoot (ARM64 39-bit VA compatible)
-set -e
-
-# Python ベースの ARM64 最適化 ACP プロトコルサーバーを起動 (-u でアンバッファード)
-exec python3 -u - << 'PYEOF'
+# 4. Create Antigravity ACP Python Bridge script
+ACP_PY="${RUNTIME_BIN_DIR}/agy_acp_bridge.py"
+cat << 'PYEOF' > "$ACP_PY"
+#!/usr/bin/env python3
 import sys
 import json
 import os
@@ -67,10 +58,11 @@ def send_response(obj):
     sys.stdout.flush()
 
 def main():
-    log_debug("Antigravity ACP bridge started.")
+    log_debug(f"Antigravity ACP bridge started. Args: {sys.argv}")
     while True:
         line = sys.stdin.readline()
         if not line:
+            log_debug("stdin closed (EOF)")
             break
         line = line.strip()
         if not line:
@@ -207,11 +199,24 @@ def main():
 if __name__ == "__main__":
     main()
 PYEOF
+chmod +x "$ACP_PY"
+
+# 5. Create Smart Wrapper for agy_acp_server.par
+# T3 Code は PATH 上の "agy_acp_server.par" と同じディレクトリにある "localharness_external" を探索する
+ACP_PAR="/usr/local/bin/agy_acp_server.par"
+ACP_LINK="/usr/local/bin/agy_acp_server"
+HARNESS="/usr/local/bin/localharness_external"
+
+cat << 'EOF' > "$ACP_PAR"
+#!/usr/bin/env bash
+# Antigravity ACP Server for Android / PRoot (ARM64 39-bit VA compatible)
+set -e
+exec python3 -u /opt/antigravity/bin/agy_acp_bridge.py "$@"
 EOF
 chmod +x "$ACP_PAR"
 ln -sf "$ACP_PAR" "$ACP_LINK"
 
-# 5. Create localharness_external
+# 6. Create localharness_external
 cat << 'EOF' > "$HARNESS"
 #!/usr/bin/env bash
 # Antigravity localharness_external stub
@@ -219,7 +224,7 @@ exit 0
 EOF
 chmod +x "$HARNESS"
 
-# 6. Pre-configure T3 Code settings.json
+# 7. Pre-configure T3 Code settings.json
 SETTINGS_FILE="/root/.t3/userdata/settings.json"
 echo "[Antigravity] T3 Code の設定ファイル ($SETTINGS_FILE) を更新中..."
 
