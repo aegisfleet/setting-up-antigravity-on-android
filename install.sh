@@ -104,28 +104,41 @@ cat << 'EOF' > "${PREFIX_BIN}/t3-start"
 PID_FILE="$HOME/.t3-server.pid"
 LOG_FILE="$HOME/.t3-server.log"
 
+get_ip() {
+    ip -4 addr show wlan0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' || true
+}
+
 if [ -f "$PID_FILE" ]; then
     PID=$(cat "$PID_FILE" 2>/dev/null || true)
     if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
         echo "[*] T3 Code サーバーは既に起動しています (PID: $PID)"
-        echo "    Web UI: http://localhost:3773"
+        DEVICE_IP=$(get_ip)
+        echo "    端末内ブラウザ: http://127.0.0.1:3773"
+        [ -n "$DEVICE_IP" ] && echo "    外部ブラウザ:   http://${DEVICE_IP}:3773"
         exit 0
     fi
 fi
 
+# 既存のプロセスやポートのクリーンアップ
+pkill -f "proot-distro.*t3 serve" 2>/dev/null || true
+pkill -f "t3 serve" 2>/dev/null || true
+sleep 1
+
 echo "[*] T3 Code サーバーを起動中..."
-nohup proot-distro login ubuntu -- /usr/local/bin/t3 serve --host 0.0.0.0 > "$LOG_FILE" 2>&1 &
+nohup proot-distro login ubuntu -- bash -c "exec /usr/local/bin/t3 serve --host 0.0.0.0" < /dev/null > "$LOG_FILE" 2>&1 &
 NEW_PID=$!
 echo "$NEW_PID" > "$PID_FILE"
-sleep 2
+sleep 3
 
 if kill -0 "$NEW_PID" 2>/dev/null; then
     echo "[✓] T3 Code サーバーが正常に起動しました (PID: $NEW_PID)"
-    echo "    Android のブラウザで http://localhost:3773 にアクセスしてください。"
+    DEVICE_IP=$(get_ip)
+    echo "    端末内ブラウザ: http://127.0.0.1:3773"
+    [ -n "$DEVICE_IP" ] && echo "    外部ブラウザ:   http://${DEVICE_IP}:3773"
     echo "    停止するには 't3-stop' を実行してください。"
 else
     echo "[!] サーバーの起動に失敗しました。直近のログ:"
-    tail -n 20 "$LOG_FILE"
+    tail -n 20 "$LOG_FILE" 2>/dev/null || true
 fi
 EOF
 chmod +x "${PREFIX_BIN}/t3-start"
@@ -143,6 +156,7 @@ if [ -f "$PID_FILE" ]; then
     fi
     rm -f "$PID_FILE"
 fi
+pkill -f "proot-distro.*t3 serve" 2>/dev/null || true
 pkill -f "t3 serve" 2>/dev/null || true
 echo "[✓] T3 Code サーバーを停止しました。"
 EOF
@@ -153,14 +167,27 @@ cat << 'EOF' > "${PREFIX_BIN}/t3-status"
 #!/data/data/com.termux/files/usr/bin/bash
 PID_FILE="$HOME/.t3-server.pid"
 LOG_FILE="$HOME/.t3-server.log"
+
+get_ip() {
+    ip -4 addr show wlan0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' || true
+}
+
 if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null; then
-    echo "[✓] T3 Code サーバーは稼働中です (PID: $(cat "$PID_FILE"))"
-    echo "    Web UI: http://localhost:3773"
+    PID=$(cat "$PID_FILE")
+    DEVICE_IP=$(get_ip)
+    echo "[✓] T3 Code サーバーは稼働中です (PID: $PID)"
+    echo "    端末内ブラウザ: http://127.0.0.1:3773"
+    [ -n "$DEVICE_IP" ] && echo "    外部ブラウザ:   http://${DEVICE_IP}:3773"
     echo ""
     echo "--- 直近のログ (末尾 10 行) ---"
     tail -n 10 "$LOG_FILE" 2>/dev/null || true
 else
     echo "[*] T3 Code サーバーは停止しています。"
+    if [ -f "$LOG_FILE" ]; then
+        echo ""
+        echo "--- 直近のログ (末尾 10 行) ---"
+        tail -n 10 "$LOG_FILE" 2>/dev/null || true
+    fi
 fi
 EOF
 chmod +x "${PREFIX_BIN}/t3-status"

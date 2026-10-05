@@ -25,7 +25,7 @@ start_server() {
     export PATH="/usr/local/bin:$PATH"
     
     # Run in background with nohup
-    nohup t3 serve --host 127.0.0.1 > "$LOG_FILE" 2>&1 &
+    nohup t3 serve --host 0.0.0.0 < /dev/null > "$LOG_FILE" 2>&1 &
     NEW_PID=$!
     echo "$NEW_PID" > "$PID_FILE"
 
