@@ -145,7 +145,7 @@ def call_gemini_api(api_key, model, prompt_text):
     return "APIからの応答が空でした。"
 
 def build_agy_cmd(agy_bin, prompt_text, model=None, effort=None):
-    cmd = [agy_bin, "-p", prompt_text]
+    cmd = [agy_bin, "-p", prompt_text, "--dangerously-skip-permissions"]
     if model:
         cmd.extend(["--model", model])
     if effort:
@@ -397,7 +397,7 @@ def main():
                     # 失敗時: モデル選択・effort未対応・無効モデル等の場合、モデルフラグなし（CLI デフォルト）でリトライ
                     if retcode != 0 and not full_output and any(k in err_msg for k in ["invalid model selection", "not supported", "unknown model", "no model configuration"]):
                         log_debug(f"Retrying with default model (no flags) due to model error: {err_msg}")
-                        cmd = [agy_bin, "-p", user_text]
+                        cmd = [agy_bin, "-p", user_text, "--dangerously-skip-permissions"]
                         retcode, full_output, err_msg = execute_agy(cmd, session_id, agy_env)
 
                     if retcode != 0 and not full_output:
