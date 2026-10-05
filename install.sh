@@ -51,7 +51,19 @@ pkg install -y proot-distro curl git tar jq
 
 # 4. Setup Ubuntu via proot-distro
 echo -e "${BLUE}[2/4] proot-distro で Ubuntu を準備中...${NC}"
-if ! proot-distro list | grep -q "ubuntu.*\[installed\]"; then
+is_ubuntu_installed() {
+    # Installed containers: のブロックに ubuntu が含まれるか確認
+    if proot-distro list 2>/dev/null | awk '/Installed containers:/,/Available distributions:/' | grep -qw "ubuntu"; then
+        return 0
+    fi
+    # または直接ログイン可能か確認
+    if proot-distro login ubuntu -- true < /dev/null 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
+if ! is_ubuntu_installed; then
     echo -e "Ubuntu が未インストールのため、新規インストールします..."
     proot-distro install ubuntu
 else
