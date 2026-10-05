@@ -45,12 +45,12 @@ if [ "$INSTALL_ANDROID_SDK" -eq 0 ] && [ -t 0 ]; then
 fi
 
 # 3. Termux host dependencies
-echo -e "${BLUE}[1/5] Termux ホストのパッケージを更新・インストール中...${NC}"
+echo -e "${BLUE}[1/4] Termux ホストのパッケージを更新・インストール中...${NC}"
 pkg update -y
 pkg install -y proot-distro curl git tar jq
 
 # 4. Setup Ubuntu via proot-distro
-echo -e "${BLUE}[2/5] proot-distro で Ubuntu を準備中...${NC}"
+echo -e "${BLUE}[2/4] proot-distro で Ubuntu を準備中...${NC}"
 if ! proot-distro list | grep -q "ubuntu.*\[installed\]"; then
     echo -e "Ubuntu が未インストールのため、新規インストールします..."
     proot-distro install ubuntu
@@ -58,41 +58,33 @@ else
     echo -e "Ubuntu は既にインストール済みです。"
 fi
 
-# 5. Clone or copy scripts to Ubuntu environment
-echo -e "${BLUE}[3/5] セットアップスクリプトを配置中...${NC}"
-DISTRO_ROOT="/data/data/com.termux/files/usr/var/lib/proot-distro/installed-rootfs/ubuntu"
-REPO_TARGET_DIR="${DISTRO_ROOT}/root/setting-up-antigravity-on-android"
+# 5. Execute setup inside Ubuntu PRoot
+echo -e "${BLUE}[3/4] Ubuntu 環境内でスクリプトを取得し、セットアップを実行中...${NC}"
 
-mkdir -p "${REPO_TARGET_DIR}"
+# PRoot 内で直接 git clone して実行することで、ホスト側パスの不整合を完全に防止
+proot-distro login ubuntu -- /bin/bash -c "
+    set -e
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -y
+    apt-get install -y --no-install-recommends ca-certificates git curl
 
-# Check if script is executed from a git clone or via curl pipe
-SCRIPT_DIR=""
-if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-fi
+    rm -rf /root/setting-up-antigravity-on-android
+    echo '[Ubuntu] リポジトリをクローン中...'
+    git clone https://github.com/aegisfleet/setting-up-antigravity-on-android.git /root/setting-up-antigravity-on-android
 
-if [ -n "$SCRIPT_DIR" ] && [ -d "$SCRIPT_DIR/scripts" ]; then
-    echo "ローカルのリポジトリスクリプトをコピーします..."
-    cp -r "$SCRIPT_DIR"/* "${REPO_TARGET_DIR}/"
-else
-    echo "最新のスクリプトを GitHub からクローンします..."
-    rm -rf "${REPO_TARGET_DIR}"
-    git clone https://github.com/aegisfleet/setting-up-antigravity-on-android.git "${REPO_TARGET_DIR}"
-fi
+    export INSTALL_ANDROID_SDK=\"$INSTALL_ANDROID_SDK\"
+    bash /root/setting-up-antigravity-on-android/scripts/setup-ubuntu.sh
+" < /dev/null
 
-# 6. Execute setup inside Ubuntu PRoot
-echo -e "${BLUE}[4/5] Ubuntu 内で T3 Code & Antigravity セットアップを実行中...${NC}"
-proot-distro login ubuntu -- env INSTALL_ANDROID_SDK="$INSTALL_ANDROID_SDK" bash /root/setting-up-antigravity-on-android/scripts/setup-ubuntu.sh
-
-# 7. Create launcher commands in Termux
-echo -e "${BLUE}[5/5] Termux コマンドを作成中...${NC}"
+# 6. Create launcher commands in Termux
+echo -e "${BLUE}[4/4] Termux コマンドを作成中...${NC}"
 PREFIX_BIN="/data/data/com.termux/files/usr/bin"
 
 # t3-start
 cat << 'EOF' > "${PREFIX_BIN}/t3-start"
 #!/data/data/com.termux/files/usr/bin/bash
 echo "[*] T3 Code サーバーをバックグラウンドで起動します..."
-proot-distro login ubuntu -- bash /root/setting-up-antigravity-on-android/scripts/t3-server-manager.sh start
+proot-distro login ubuntu -- bash /root/setting-up-antigravity-on-android/scripts/t3-server-manager.sh start < /dev/null
 echo ""
 echo "[✓] サーバーが起動しました。"
 echo "    Android のブラウザで http://127.0.0.1:3773 にアクセスしてください。"
@@ -104,14 +96,14 @@ chmod +x "${PREFIX_BIN}/t3-start"
 cat << 'EOF' > "${PREFIX_BIN}/t3-stop"
 #!/data/data/com.termux/files/usr/bin/bash
 echo "[*] T3 Code サーバーを停止します..."
-proot-distro login ubuntu -- bash /root/setting-up-antigravity-on-android/scripts/t3-server-manager.sh stop
+proot-distro login ubuntu -- bash /root/setting-up-antigravity-on-android/scripts/t3-server-manager.sh stop < /dev/null
 EOF
 chmod +x "${PREFIX_BIN}/t3-stop"
 
 # t3-status
 cat << 'EOF' > "${PREFIX_BIN}/t3-status"
 #!/data/data/com.termux/files/usr/bin/bash
-proot-distro login ubuntu -- bash /root/setting-up-antigravity-on-android/scripts/t3-server-manager.sh status
+proot-distro login ubuntu -- bash /root/setting-up-antigravity-on-android/scripts/t3-server-manager.sh status < /dev/null
 EOF
 chmod +x "${PREFIX_BIN}/t3-status"
 
