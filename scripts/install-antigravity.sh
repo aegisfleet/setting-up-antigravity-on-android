@@ -291,7 +291,6 @@ def main():
                 user_text = prompt_data
 
             agy_bin = find_agy_binary()
-            api_key = get_api_key()
 
             agy_env = dict(os.environ)
             agy_env["HOME"] = "/root"
