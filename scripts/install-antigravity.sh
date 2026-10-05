@@ -144,6 +144,16 @@ def call_gemini_api(api_key, model, prompt_text):
                 return parts[0].get("text", "")
     return "APIからの応答が空でした。"
 
+def build_agy_cmd(agy_bin, prompt_text, model):
+    cmd = [agy_bin, "-p", prompt_text]
+    if model:
+        cmd.extend(["--model", model])
+        # gemini-3.* または flash / thinking モデルは --effort が必須
+        m_lower = model.lower()
+        if "gemini-3" in m_lower or "flash" in m_lower or "thinking" in m_lower:
+            cmd.extend(["--effort", "medium"])
+    return cmd
+
 def get_config_options():
     return [
         {
@@ -296,30 +306,14 @@ def main():
             is_json_request = "Return only the requested JSON object" in user_text or "outputSchema" in user_text
 
             if is_json_request:
-                title_json = json.dumps({"title": "チャット"})
-                if agy_bin:
-                    try:
-                        cmd = [agy_bin, "-p", user_text]
-                        if current_model:
-                            cmd.extend(["--model", current_model])
-                        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=20, env=agy_env)
-                        out = res.stdout.strip()
-                        if "{" in out and "}" in out:
-                            s = out[out.find("{"):out.rfind("}")+1]
-                            json.loads(s)
-                            title_json = s
-                    except Exception as e:
-                        log_debug(f"Title generation error via agy: {e}")
-                elif api_key:
-                    try:
-                        reply = call_gemini_api(api_key, current_model, user_text)
-                        if "{" in reply and "}" in reply:
-                            s = reply[reply.find("{"):reply.rfind("}")+1]
-                            json.loads(s)
-                            title_json = s
-                    except Exception as e:
-                        log_debug(f"Title generation error via API: {e}")
-
+                # タイトル生成要求には即座に軽量JSONを返して並行競合を防止
+                title = "チャット"
+                for line in user_text.splitlines():
+                    clean_line = line.strip()
+                    if clean_line and not clean_line.startswith("<") and not clean_line.startswith("Return only") and not clean_line.startswith("Use only"):
+                        title = clean_line[:24]
+                        break
+                title_json = json.dumps({"title": title})
                 send_response({
                     "jsonrpc": "2.0",
                     "method": "session/update",
@@ -343,43 +337,87 @@ def main():
                 })
             else:
                 if agy_bin:
-                    cmd = [agy_bin, "-p", user_text]
-                    if current_model:
-                        cmd.extend(["--model", current_model])
+                    cmd = build_agy_cmd(agy_bin, user_text, current_model)
                     log_debug(f"Spawning agy: {cmd}")
+                    err_log_path = "/tmp/agy_cmd_err.log"
                     try:
-                        proc = subprocess.Popen(
-                            cmd,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            text=True,
-                            bufsize=1,
-                            env=agy_env
-                        )
-                        full_output = ""
-                        for line in iter(proc.stdout.readline, ''):
-                            if not line:
-                                break
-                            full_output += line
-                            send_response({
-                                "jsonrpc": "2.0",
-                                "method": "session/update",
-                                "params": {
-                                    "sessionId": session_id,
-                                    "update": {
-                                        "sessionUpdate": "agent_message_chunk",
-                                        "content": {
-                                            "type": "text",
-                                            "text": line
+                        with open(err_log_path, "w+", encoding="utf-8", errors="replace") as err_file:
+                            proc = subprocess.Popen(
+                                cmd,
+                                stdout=subprocess.PIPE,
+                                stderr=err_file,
+                                text=True,
+                                bufsize=1,
+                                env=agy_env
+                            )
+                            full_output = ""
+                            for line in iter(proc.stdout.readline, ''):
+                                if not line:
+                                    break
+                                full_output += line
+                                send_response({
+                                    "jsonrpc": "2.0",
+                                    "method": "session/update",
+                                    "params": {
+                                        "sessionId": session_id,
+                                        "update": {
+                                            "sessionUpdate": "agent_message_chunk",
+                                            "content": {
+                                                "type": "text",
+                                                "text": line
+                                            }
                                         }
                                     }
-                                }
-                            })
-                        proc.stdout.close()
-                        proc.wait()
+                                })
+                            proc.stdout.close()
+                            proc.wait()
+
                         if proc.returncode != 0:
-                            err_msg = proc.stderr.read()
+                            err_msg = ""
+                            try:
+                                with open(err_log_path, "r", encoding="utf-8", errors="replace") as ef:
+                                    err_msg = ef.read().strip()
+                            except Exception:
+                                pass
                             log_debug(f"agy exited with code {proc.returncode}: {err_msg}")
+
+                            # --effort 不足だった場合のリトライ
+                            if "requires --effort" in err_msg and "--effort" not in cmd:
+                                cmd.extend(["--effort", "medium"])
+                                log_debug(f"Retrying agy with effort: {cmd}")
+                                with open(err_log_path, "w+", encoding="utf-8", errors="replace") as ef2:
+                                    proc2 = subprocess.Popen(
+                                        cmd,
+                                        stdout=subprocess.PIPE,
+                                        stderr=ef2,
+                                        text=True,
+                                        bufsize=1,
+                                        env=agy_env
+                                    )
+                                    for line in iter(proc2.stdout.readline, ''):
+                                        if not line:
+                                            break
+                                        full_output += line
+                                        send_response({
+                                            "jsonrpc": "2.0",
+                                            "method": "session/update",
+                                            "params": {
+                                                "sessionId": session_id,
+                                                "update": {
+                                                    "sessionUpdate": "agent_message_chunk",
+                                                    "content": {
+                                                        "type": "text",
+                                                        "text": line
+                                                    }
+                                                }
+                                            }
+                                        })
+                                    proc2.stdout.close()
+                                    proc2.wait()
+                                    if proc2.returncode != 0:
+                                        with open(err_log_path, "r", encoding="utf-8", errors="replace") as ef3:
+                                            err_msg = ef3.read().strip()
+
                             if not full_output:
                                 send_response({
                                     "jsonrpc": "2.0",
