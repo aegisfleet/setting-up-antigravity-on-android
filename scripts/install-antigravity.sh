@@ -45,24 +45,41 @@ cat << 'EOF' > "$ACP_PAR"
 # Antigravity ACP Server for Android / PRoot (ARM64 39-bit VA compatible)
 set -e
 
-# Python ベースの ARM64 最適化 ACP プロトコルサーバーを起動
-exec python3 - << 'PYEOF'
+# Python ベースの ARM64 最適化 ACP プロトコルサーバーを起動 (-u でアンバッファード)
+exec python3 -u - << 'PYEOF'
 import sys
 import json
 import os
 
+LOG_FILE = "/tmp/agy_acp.log"
+
+def log_debug(msg):
+    try:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(msg + "\n")
+    except Exception:
+        pass
+
 def send_response(obj):
-    sys.stdout.write(json.dumps(obj) + "\n")
+    raw = json.dumps(obj)
+    log_debug(">> " + raw)
+    sys.stdout.write(raw + "\n")
     sys.stdout.flush()
 
 def main():
-    for line in sys.stdin:
+    log_debug("Antigravity ACP bridge started.")
+    while True:
+        line = sys.stdin.readline()
+        if not line:
+            break
         line = line.strip()
         if not line:
             continue
+        log_debug("<< " + line)
         try:
             req = json.loads(line)
-        except Exception:
+        except Exception as e:
+            log_debug("JSON parse error: " + str(e))
             continue
 
         method = req.get("method")
@@ -76,15 +93,22 @@ def main():
                     "protocolVersion": 1,
                     "agentInfo": {
                         "name": "antigravity-acp",
+                        "title": "Google Antigravity",
                         "version": "agy_acp_server_1.1.1"
                     },
                     "agentCapabilities": {
                         "loadSession": True,
                         "sessionCapabilities": {
+                            "list": {},
                             "resume": True
                         },
                         "auth": {
                             "logout": True
+                        },
+                        "promptCapabilities": {
+                            "image": True,
+                            "audio": True,
+                            "embeddedContext": True
                         }
                     },
                     "authMethods": [
@@ -119,9 +143,27 @@ def main():
                 "id": msg_id,
                 "result": {
                     "sessionId": "agy-session-arm64",
-                    "models": [
-                        {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro"},
-                        {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"}
+                    "models": {
+                        "currentModelId": "gemini-2.5-pro",
+                        "availableModels": [
+                            {"modelId": "gemini-2.5-pro", "name": "Gemini 2.5 Pro"},
+                            {"modelId": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"}
+                        ]
+                    },
+                    "configOptions": [
+                        {
+                            "id": "model",
+                            "name": "Model",
+                            "type": "select",
+                            "currentValue": "gemini-2.5-pro",
+                            "options": [
+                                {"value": "gemini-2.5-pro", "name": "Gemini 2.5 Pro"},
+                                {"value": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"}
+                            ]
+                        }
+                    ],
+                    "availableCommands": [
+                        {"name": "compact", "description": "Compact conversation history"}
                     ]
                 }
             })
