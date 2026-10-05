@@ -37,7 +37,7 @@ Termux を開き、以下のコマンドを貼り付けて実行します。
 
 ```bash
 pkg update -y && pkg install -y curl
-curl -fsSL https://raw.githubusercontent.com/aegisfleet/setting-up-antigravity-on-android/main/install.sh | bash
+curl -fsSL "https://raw.githubusercontent.com/aegisfleet/setting-up-antigravity-on-android/main/install.sh?v=$(date +%s)" | bash
 ```
 
 > **対話プロンプトについて**:

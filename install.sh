@@ -51,23 +51,29 @@ pkg install -y proot-distro curl git tar jq
 
 # 4. Setup Ubuntu via proot-distro
 echo -e "${BLUE}[2/4] proot-distro で Ubuntu を準備中...${NC}"
-is_ubuntu_installed() {
-    # Installed containers: のブロックに ubuntu が含まれるか確認
-    if proot-distro list 2>/dev/null | awk '/Installed containers:/,/Available distributions:/' | grep -qw "ubuntu"; then
-        return 0
-    fi
-    # または直接ログイン可能か確認
-    if proot-distro login ubuntu -- true < /dev/null 2>/dev/null; then
-        return 0
-    fi
-    return 1
-}
 
-if ! is_ubuntu_installed; then
-    echo -e "Ubuntu が未インストールのため、新規インストールします..."
-    proot-distro install ubuntu
-else
+# インストール済みチェック
+UBUNTU_INSTALLED=0
+if proot-distro list 2>&1 | grep -qE "(Installed containers:.*ubuntu|\* ubuntu|ubuntu.*\[installed\])"; then
+    UBUNTU_INSTALLED=1
+elif proot-distro login ubuntu -- true < /dev/null 2>/dev/null; then
+    UBUNTU_INSTALLED=1
+fi
+
+if [ "$UBUNTU_INSTALLED" -eq 1 ]; then
     echo -e "Ubuntu は既にインストール済みです。"
+else
+    echo -e "Ubuntu が未インストールのため、新規インストールします..."
+    # 既にコンテナが存在する場合はエラーにせず続行
+    INSTALL_OUT=$(proot-distro install ubuntu 2>&1) || {
+        if echo "$INSTALL_OUT" | grep -qi "already exists"; then
+            echo -e "Ubuntu は既に存在します（続行します）。"
+        else
+            echo -e "${RED}[エラー] Ubuntu のインストールに失敗しました:${NC}"
+            echo "$INSTALL_OUT"
+            exit 1
+        fi
+    }
 fi
 
 # 5. Execute setup inside Ubuntu PRoot
