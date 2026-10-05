@@ -289,6 +289,10 @@ def main():
             agy_bin = find_agy_binary()
             api_key = get_api_key()
 
+            agy_env = dict(os.environ)
+            agy_env["HOME"] = "/root"
+            agy_env["PATH"] = "/usr/local/bin:/root/.local/bin:" + agy_env.get("PATH", "/usr/bin:/bin")
+
             is_json_request = "Return only the requested JSON object" in user_text or "outputSchema" in user_text
 
             if is_json_request:
@@ -298,7 +302,7 @@ def main():
                         cmd = [agy_bin, "-p", user_text]
                         if current_model:
                             cmd.extend(["--model", current_model])
-                        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=20)
+                        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=20, env=agy_env)
                         out = res.stdout.strip()
                         if "{" in out and "}" in out:
                             s = out[out.find("{"):out.rfind("}")+1]
@@ -349,7 +353,8 @@ def main():
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE,
                             text=True,
-                            bufsize=1
+                            bufsize=1,
+                            env=agy_env
                         )
                         full_output = ""
                         for line in iter(proc.stdout.readline, ''):
