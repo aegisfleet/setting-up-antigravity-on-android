@@ -101,27 +101,67 @@ PREFIX_BIN="/data/data/com.termux/files/usr/bin"
 # t3-start
 cat << 'EOF' > "${PREFIX_BIN}/t3-start"
 #!/data/data/com.termux/files/usr/bin/bash
-echo "[*] T3 Code サーバーをバックグラウンドで起動します..."
-proot-distro login ubuntu -- bash /root/setting-up-antigravity-on-android/scripts/t3-server-manager.sh start < /dev/null
-echo ""
-echo "[✓] サーバーが起動しました。"
-echo "    Android のブラウザで http://127.0.0.1:3773 にアクセスしてください。"
-echo "    停止するには 't3-stop' を実行してください。"
+PID_FILE="$HOME/.t3-server.pid"
+LOG_FILE="$HOME/.t3-server.log"
+
+if [ -f "$PID_FILE" ]; then
+    PID=$(cat "$PID_FILE" 2>/dev/null || true)
+    if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+        echo "[*] T3 Code サーバーは既に起動しています (PID: $PID)"
+        echo "    Web UI: http://localhost:3773"
+        exit 0
+    fi
+fi
+
+echo "[*] T3 Code サーバーを起動中..."
+nohup proot-distro login ubuntu -- /usr/local/bin/t3 serve --host 0.0.0.0 > "$LOG_FILE" 2>&1 &
+NEW_PID=$!
+echo "$NEW_PID" > "$PID_FILE"
+sleep 2
+
+if kill -0 "$NEW_PID" 2>/dev/null; then
+    echo "[✓] T3 Code サーバーが正常に起動しました (PID: $NEW_PID)"
+    echo "    Android のブラウザで http://localhost:3773 にアクセスしてください。"
+    echo "    停止するには 't3-stop' を実行してください。"
+else
+    echo "[!] サーバーの起動に失敗しました。直近のログ:"
+    tail -n 20 "$LOG_FILE"
+fi
 EOF
 chmod +x "${PREFIX_BIN}/t3-start"
 
 # t3-stop
 cat << 'EOF' > "${PREFIX_BIN}/t3-stop"
 #!/data/data/com.termux/files/usr/bin/bash
-echo "[*] T3 Code サーバーを停止します..."
-proot-distro login ubuntu -- bash /root/setting-up-antigravity-on-android/scripts/t3-server-manager.sh stop < /dev/null
+PID_FILE="$HOME/.t3-server.pid"
+if [ -f "$PID_FILE" ]; then
+    PID=$(cat "$PID_FILE" 2>/dev/null || true)
+    if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+        echo "[*] T3 Code サーバー (PID: $PID) を停止中..."
+        kill "$PID" 2>/dev/null || true
+        pkill -P "$PID" 2>/dev/null || true
+    fi
+    rm -f "$PID_FILE"
+fi
+pkill -f "t3 serve" 2>/dev/null || true
+echo "[✓] T3 Code サーバーを停止しました。"
 EOF
 chmod +x "${PREFIX_BIN}/t3-stop"
 
 # t3-status
 cat << 'EOF' > "${PREFIX_BIN}/t3-status"
 #!/data/data/com.termux/files/usr/bin/bash
-proot-distro login ubuntu -- bash /root/setting-up-antigravity-on-android/scripts/t3-server-manager.sh status < /dev/null
+PID_FILE="$HOME/.t3-server.pid"
+LOG_FILE="$HOME/.t3-server.log"
+if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null; then
+    echo "[✓] T3 Code サーバーは稼働中です (PID: $(cat "$PID_FILE"))"
+    echo "    Web UI: http://localhost:3773"
+    echo ""
+    echo "--- 直近のログ (末尾 10 行) ---"
+    tail -n 10 "$LOG_FILE" 2>/dev/null || true
+else
+    echo "[*] T3 Code サーバーは停止しています。"
+fi
 EOF
 chmod +x "${PREFIX_BIN}/t3-status"
 
