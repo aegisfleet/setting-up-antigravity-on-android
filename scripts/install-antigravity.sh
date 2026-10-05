@@ -57,7 +57,33 @@ def send_response(obj):
     sys.stdout.write(raw + "\n")
     sys.stdout.flush()
 
+# 最新のモデル定義
+MODELS_LIST = [
+    {"modelId": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (Recommended)"},
+    {"modelId": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"},
+    {"modelId": "gemini-1.5-pro", "name": "Gemini 1.5 Pro"},
+    {"modelId": "gemini-1.5-flash", "name": "Gemini 1.5 Flash"},
+    {"modelId": "claude-3-7-sonnet", "name": "Claude 3.7 Sonnet"}
+]
+
+current_model = "gemini-2.5-pro"
+
+def get_config_options():
+    return [
+        {
+            "id": "model",
+            "name": "Model",
+            "type": "select",
+            "currentValue": current_model,
+            "options": [
+                {"value": m["modelId"], "name": m["name"]}
+                for m in MODELS_LIST
+            ]
+        }
+    ]
+
 def main():
+    global current_model
     log_debug(f"Antigravity ACP bridge started. Args: {sys.argv}")
     while True:
         line = sys.stdin.readline()
@@ -122,28 +148,43 @@ def main():
                 "result": {
                     "sessionId": "agy-session-arm64",
                     "models": {
-                        "currentModelId": "gemini-2.5-pro",
-                        "availableModels": [
-                            {"modelId": "gemini-2.5-pro", "name": "Gemini 2.5 Pro"},
-                            {"modelId": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"}
-                        ]
+                        "currentModelId": current_model,
+                        "availableModels": MODELS_LIST
                     },
-                    "configOptions": [
-                        {
-                            "id": "model",
-                            "name": "Model",
-                            "type": "select",
-                            "currentValue": "gemini-2.5-pro",
-                            "options": [
-                                {"value": "gemini-2.5-pro", "name": "Gemini 2.5 Pro"},
-                                {"value": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"}
-                            ]
-                        }
-                    ],
+                    "configOptions": get_config_options(),
                     "availableCommands": [
                         {"name": "compact", "description": "Compact conversation history"}
                     ]
                 }
+            })
+        elif method == "session/set_config_option":
+            params = req.get("params", {})
+            cfg_id = params.get("configId")
+            val = params.get("value")
+            if cfg_id == "model" and isinstance(val, str) and val:
+                current_model = val
+            send_response({
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "configOptions": get_config_options()
+                }
+            })
+        elif method == "session/set_model":
+            params = req.get("params", {})
+            m_id = params.get("modelId")
+            if isinstance(m_id, str) and m_id:
+                current_model = m_id
+            send_response({
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {}
+            })
+        elif method == "session/set_mode":
+            send_response({
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {}
             })
         elif method == "session/load":
             send_response({
@@ -156,15 +197,29 @@ def main():
             })
         elif method == "session/prompt":
             session_id = req.get("params", {}).get("sessionId", "agy-session-arm64")
-            # ストリーミング通知
+            prompt_data = req.get("params", {}).get("prompt", [])
+            user_text = ""
+            if isinstance(prompt_data, list):
+                for p in prompt_data:
+                    if isinstance(p, dict) and p.get("type") == "text":
+                        user_text += p.get("text", "")
+            elif isinstance(prompt_data, str):
+                user_text = prompt_data
+
+            reply = f"【Antigravity on Android (ARM64)】\nモデル: {current_model}\nメッセージを受信しました: {user_text}\n\nT3 Code と Antigravity (ACP) の連携は正常に稼働しています。"
+
+            # ACP agent_message_chunk ストリーミング通知
             send_response({
                 "jsonrpc": "2.0",
                 "method": "session/update",
                 "params": {
                     "sessionId": session_id,
                     "update": {
-                        "type": "content",
-                        "content": "Google Antigravity on Android (PRoot ARM64) is connected and ready."
+                        "sessionUpdate": "agent_message_chunk",
+                        "content": {
+                            "type": "text",
+                            "text": reply
+                        }
                     }
                 }
             })
