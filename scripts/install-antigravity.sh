@@ -41,8 +41,12 @@ cat << 'PYEOF' > "$ACP_PY"
 import sys
 import json
 import os
+import uuid
+import urllib.request
+import urllib.error
 
 LOG_FILE = "/tmp/agy_acp.log"
+API_KEY_FILE = "/root/.gemini/antigravity-acp/gemini_api_key"
 
 def log_debug(msg):
     try:
@@ -69,6 +73,51 @@ MODELS_LIST = [
 
 current_model = "gemini-3.8-flash"
 
+def get_api_key():
+    key = os.environ.get("GEMINI_API_KEY")
+    if key and key.strip():
+        return key.strip()
+    if os.path.exists(API_KEY_FILE):
+        try:
+            with open(API_KEY_FILE, "r", encoding="utf-8") as f:
+                k = f.read().strip()
+                if k:
+                    return k
+        except Exception:
+            pass
+    return None
+
+def call_gemini_api(api_key, model, prompt_text):
+    # APIモデル名の対応付け
+    api_model = "gemini-2.5-flash"
+    if "pro" in model.lower():
+        api_model = "gemini-2.5-pro"
+    elif "flash" in model.lower():
+        api_model = "gemini-2.5-flash"
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{api_model}:generateContent?key={api_key}"
+    payload = {
+        "contents": [
+            {
+                "parts": [{"text": prompt_text}]
+            }
+        ]
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json"}
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        res_json = json.loads(resp.read().decode("utf-8"))
+        candidates = res_json.get("candidates", [])
+        if candidates:
+            parts = candidates[0].get("content", {}).get("parts", [])
+            if parts:
+                return parts[0].get("text", "")
+    return "APIからの応答が空でした。"
+
 def get_config_options():
     return [
         {
@@ -84,7 +133,9 @@ def get_config_options():
     ]
 
 def get_session_setup_result(session_id=None):
+    sid = session_id or str(uuid.uuid4())
     res = {
+        "sessionId": sid,
         "models": {
             "currentModelId": current_model,
             "availableModels": MODELS_LIST
@@ -94,8 +145,6 @@ def get_session_setup_result(session_id=None):
             {"name": "compact", "description": "Compact conversation history"}
         ]
     }
-    if session_id:
-        res["sessionId"] = session_id
     return res
 
 def main():
@@ -161,7 +210,7 @@ def main():
             send_response({
                 "jsonrpc": "2.0",
                 "id": msg_id,
-                "result": get_session_setup_result("agy-session-arm64")
+                "result": get_session_setup_result(str(uuid.uuid4()))
             })
         elif method == "session/set_config_option":
             params = req.get("params", {})
@@ -193,13 +242,15 @@ def main():
                 "result": {}
             })
         elif method in ("session/load", "session/resume"):
+            params = req.get("params", {})
+            sid = params.get("sessionId") or str(uuid.uuid4())
             send_response({
                 "jsonrpc": "2.0",
                 "id": msg_id,
-                "result": get_session_setup_result()
+                "result": get_session_setup_result(sid)
             })
         elif method == "session/prompt":
-            session_id = req.get("params", {}).get("sessionId", "agy-session-arm64")
+            session_id = req.get("params", {}).get("sessionId") or str(uuid.uuid4())
             prompt_data = req.get("params", {}).get("prompt", [])
             user_text = ""
             if isinstance(prompt_data, list):
@@ -209,7 +260,42 @@ def main():
             elif isinstance(prompt_data, str):
                 user_text = prompt_data
 
-            reply = f"【Antigravity on Android (ARM64)】\nモデル: {current_model}\nメッセージを受信しました: {user_text}\n\nT3 Code と Antigravity (ACP) の連携は正常に稼働しています。"
+            api_key = get_api_key()
+
+            # タイトル生成や構造化JSON出力リクエストの判定
+            is_json_request = "Return only the requested JSON object" in user_text or "outputSchema" in user_text
+
+            if is_json_request:
+                if api_key:
+                    try:
+                        reply = call_gemini_api(api_key, current_model, user_text)
+                    except Exception as e:
+                        log_debug(f"Gemini API JSON generation error: {e}")
+                        reply = json.dumps({"title": "チャット"})
+                else:
+                    reply = json.dumps({"title": "チャット"})
+            else:
+                if api_key:
+                    try:
+                        reply = call_gemini_api(api_key, current_model, user_text)
+                    except Exception as e:
+                        log_debug(f"Gemini API error: {e}")
+                        reply = f"【Gemini API 呼び出しエラー】\n{str(e)}\n\nAPIキーまたはネットワーク接続を確認してください。"
+                else:
+                    reply = (
+                        f"【Antigravity on Android (PRoot)】\n"
+                        f"選択モデル: {current_model}\n\n"
+                        f"受信メッセージ:\n{user_text}\n\n"
+                        f"---\n"
+                        f"💡 **本物の AI 応答を有効にする方法**\n"
+                        f"Google 公式の Antigravity サーバーバイナリは、Linux ARM64 版が 48-bit 仮想アドレス空間（TCMalloc）前提でコンパイルされており、Android カーネルの 39-bit 仮想アドレス空間では起動時に強制終了（Aborted）します。\n\n"
+                        f"本環境では軽量 ACP ブリッジを介して T3 Code と連携しているため、**Gemini API キー** を設定することで即座に本物の Gemini からリアルタイム回答を取得できます。\n\n"
+                        f"**設定手順:**\n"
+                        f"1. [Google AI Studio](https://aistudio.google.com/) で API キー（無料）を取得します。\n"
+                        f"2. Termux PRoot 内で以下を実行します:\n"
+                        f"   `echo 'あなたのGemini_APIキー' > /root/.gemini/antigravity-acp/gemini_api_key`\n"
+                        f"3. 再度チャットで質問を送信すると、本物の AI が回答します。"
+                    )
 
             # ACP agent_message_chunk ストリーミング通知
             send_response({
