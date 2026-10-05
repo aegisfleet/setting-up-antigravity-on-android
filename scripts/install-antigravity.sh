@@ -47,7 +47,17 @@ if [ ! -d "$ANTIGRAVITY_DIR/venv" ]; then
     python3 -m venv "$ANTIGRAVITY_DIR/venv"
 fi
 
-# 3. Create Smart Wrapper for agy_acp_server.par
+# 3. Create dummy xdg-open to safely intercept browser opening in PRoot
+XDG_OPEN_BIN="/usr/local/bin/xdg-open"
+cat << 'EOF' > "$XDG_OPEN_BIN"
+#!/usr/bin/env bash
+# Termux PRoot dummy xdg-open
+# Output auth URL directly to stderr so T3 Code ACP client detects it
+echo "Open the following link to authenticate the ACP server: $1" >&2
+EOF
+chmod +x "$XDG_OPEN_BIN"
+
+# 4. Create Smart Wrapper for agy_acp_server.par
 # T3 Code は PATH 上の "agy_acp_server.par" と同じディレクトリにある "localharness_external" を探索する
 ACP_PAR="/usr/local/bin/agy_acp_server.par"
 ACP_LINK="/usr/local/bin/agy_acp_server"
@@ -63,19 +73,11 @@ export MALLOC_CHECK_=0
 export TCMALLOC_SKIP_MMAP_HINT=1
 export GLIBC_TUNABLES="glibc.malloc.arena_max=2"
 
-# 1. 公式バイナリが存在する場合はまず実行を試行
+# 1. 公式バイナリが存在し、実行可能な場合は透過実行
 REAL_BIN="/opt/antigravity/bin/agy_acp_server.real"
 if [ -x "$REAL_BIN" ]; then
-    # 正常実行できればそのまま置換
-    exec "$REAL_BIN" "$@" 2>/tmp/agy_real_err.log || {
-        ERR_CODE=$?
-        # クラッシュした場合（シグナル終了等）のみフォールバックへ移行
-        if [ $ERR_CODE -ne 0 ] && [ $ERR_CODE -ne 130 ]; then
-            echo "[Antigravity Wrapper] 公式バイナリが終了コード $ERR_CODE で停止したため、ACP ブリッジへ切り替えます。" >&2
-        else
-            exit $ERR_CODE
-        fi
-    }
+    # stderr をリダイレクトせず、T3 Code に直接流す（Google OAuth 認証 URL の検知に必須）
+    exec "$REAL_BIN" "$@"
 fi
 
 # 2. Python ベースの ACP プロトコルブリッジ
@@ -106,16 +108,36 @@ def main():
                 "jsonrpc": "2.0",
                 "id": msg_id,
                 "result": {
-                    "protocolVersion": "2024-11-05",
-                    "serverInfo": {
-                        "name": "Google Antigravity (ARM64 PRoot)",
-                        "version": "1.1.1"
+                    "protocolVersion": 1,
+                    "agentInfo": {
+                        "name": "antigravity-acp",
+                        "version": "agy_acp_server_1.1.1"
                     },
-                    "capabilities": {
-                        "agents": True,
-                        "prompts": True,
-                        "tools": True
-                    }
+                    "agentCapabilities": {
+                        "loadSession": True,
+                        "sessionCapabilities": {
+                            "resume": True
+                        },
+                        "auth": {
+                            "logout": True
+                        }
+                    },
+                    "authMethods": [
+                        {"id": "oauth-personal", "name": "Google account"},
+                        {"id": "gemini-api-key", "name": "Gemini API key"}
+                    ],
+                    "configOptions": [
+                        {
+                            "id": "model",
+                            "name": "Model",
+                            "type": "select",
+                            "currentValue": "gemini-2.5-pro",
+                            "options": [
+                                {"value": "gemini-2.5-pro", "name": "Gemini 2.5 Pro"},
+                                {"value": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"}
+                            ]
+                        }
+                    ]
                 }
             })
         elif method == "authenticate":
@@ -123,8 +145,7 @@ def main():
                 "jsonrpc": "2.0",
                 "id": msg_id,
                 "result": {
-                    "status": "authenticated",
-                    "user": "Google Antigravity User"
+                    "status": "authenticated"
                 }
             })
         elif method == "session/new":
@@ -134,8 +155,8 @@ def main():
                 "result": {
                     "sessionId": "agy-session-arm64",
                     "models": [
-                        {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro (Antigravity)"},
-                        {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash (Antigravity)"}
+                        {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro"},
+                        {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"}
                     ]
                 }
             })
@@ -153,7 +174,7 @@ EOF
 chmod +x "$ACP_PAR"
 ln -sf "$ACP_PAR" "$ACP_LINK"
 
-# 4. Create localharness_external
+# 5. Create localharness_external
 cat << 'EOF' > "$HARNESS"
 #!/usr/bin/env bash
 # Antigravity localharness_external wrapper
@@ -165,7 +186,7 @@ exit 0
 EOF
 chmod +x "$HARNESS"
 
-# 5. Pre-configure T3 Code settings.json
+# 6. Pre-configure T3 Code settings.json
 SETTINGS_FILE="/root/.t3/userdata/settings.json"
 echo "[Antigravity] T3 Code の設定ファイル ($SETTINGS_FILE) を更新中..."
 
