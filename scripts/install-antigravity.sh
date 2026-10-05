@@ -92,10 +92,10 @@ def main():
                         "loadSession": True,
                         "sessionCapabilities": {
                             "list": {},
-                            "resume": True
+                            "resume": {}
                         },
                         "auth": {
-                            "logout": True
+                            "logout": {}
                         },
                         "promptCapabilities": {
                             "image": True,
@@ -106,18 +106,6 @@ def main():
                     "authMethods": [
                         {"id": "oauth-personal", "name": "Google account"},
                         {"id": "gemini-api-key", "name": "Gemini API key"}
-                    ],
-                    "configOptions": [
-                        {
-                            "id": "model",
-                            "name": "Model",
-                            "type": "select",
-                            "currentValue": "gemini-2.5-pro",
-                            "options": [
-                                {"value": "gemini-2.5-pro", "name": "Gemini 2.5 Pro"},
-                                {"value": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"}
-                            ]
-                        }
                     ]
                 }
             })
@@ -125,9 +113,7 @@ def main():
             send_response({
                 "jsonrpc": "2.0",
                 "id": msg_id,
-                "result": {
-                    "status": "authenticated"
-                }
+                "result": {}
             })
         elif method == "session/new":
             send_response({
