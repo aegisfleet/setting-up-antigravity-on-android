@@ -1,19 +1,30 @@
 # Antigravity & T3 Code on Android (Termux)
 
-Android 上の **Termux**（Google Play 版）および **proot-distro (Ubuntu)** を利用し、[T3 Code](https://github.com/pingdotgg/t3code) と **Google Antigravity** をワンライナーで手軽にセットアップ・運用するためのスクリプト群です。
+Android 上の **Termux**（Google Play 版 / F-Droid 版）および **proot-distro (Ubuntu)** を利用し、[T3 Code](https://github.com/pingdotgg/t3code) と **Google Antigravity CLI (`agy`)** を連携させて、Android 端末単体で完全な自律型 AI コーディング環境をワンライナーで構築するためのスクリプト群です。
+
 オプションで、ARM64 環境に最適化された **Android SDK (APK/AAB ビルド環境)** の自動構築もサポートします。
 
 ---
 
 ## 主な特徴
 
-- 🚀 **ワンライナー導入**: Termux 上で 1 行のコマンドを実行するだけで Ubuntu 環境から T3 Code まで完全自動構築。
-- 🤖 **Antigravity セットアップ済み**: 
-  - Android (ARM64) 特有の 39-bit VA (Virtual Address) / TCMalloc 起因によるクラッシュや、T3 UI 上の「Install Antigravity」失敗問題を解消するラッパーとプロバイダ設定を事前配備。
-- 📦 **完全な依存関係解決**:
-  - Ubuntu PRoot 環境に必要な `libatomic1`、Node.js LTS (v22.x)、Python 環境を事前インストール。
+- 🚀 **ワンライナー導入**: Termux 上で 1 行のコマンドを実行するだけで Ubuntu 環境、Node.js、T3 Code、Antigravity CLI まで完全自動構築。
+- 🤖 **公式 Antigravity CLI (`agy`) ネイティブ連携**:
+  - Google 公式の Antigravity CLI (`linux_arm64`) を利用。Termux / PRoot Ubuntu 環境から **Google アカウント認証 (OAuth)** で本物の AI と直接対話可能。
+  - API キーの発行や従量課金設定は不要。
+- 🧠 **最新モデル対応**:
+  - **Gemini 3.8 Flash**（デフォルト・超高速レスポンス）
+  - **Claude Sonnet 4.6**（高精度コーディング）
+  - **Claude Opus 4.6**（高度な推論）
+  - Gemini 2.5 Pro / Flash
+- ⚡ **自律エージェント機能（全ツール自動承認）**:
+  - エージェント実行時に `--dangerously-skip-permissions` を自動適用。
+  - ファイルの作成・編集、ディレクトリ探索、シェルコマンドの実行などを AI が自律的に完結。
+- 🛡 **Android ARM64 最適化ブリッジ**:
+  - Android 特有の仮想アドレス空間（39-bit VA）起因で公式 ACP サーバーバイナリが異常終了（Aborted）する問題を解消する軽量 ACP ブリッジを内包。
+  - モデル仕様の差異や reasoning effort 要求にも自動対応・フォールバック。
 - 🛠 **Android SDK ビルド環境（オプション）**:
-  - Google 公式 Maven に存在しない ARM64 版 `aapt2` の問題に対応し、端末内での Gradle による APK ビルドを可能にする環境を自動構成。
+  - ARM64 版 `aapt2` のパッチ適用済み。端末内での Gradle による APK ビルドが可能。
 - 📱 **直感的な操作コマンド**:
   - `t3-start`、`t3-stop`、`t3-status`、`t3-shell` などの Termux コマンドを自動生成。
 
@@ -22,7 +33,7 @@ Android 上の **Termux**（Google Play 版）および **proot-distro (Ubuntu)*
 ## 前提条件
 
 1. **Android 端末** (ARM64 / aarch64 推奨)
-2. **Termux (Google Play 版)**
+2. **Termux** (Google Play 版 または F-Droid 版)
 3. **空きストレージ容量**:
    - 基本構成 (Ubuntu + T3 Code + Antigravity): 約 2.5 GB 以上
    - Android SDK オプション追加時: 約 5 GB 以上
@@ -42,14 +53,39 @@ curl -fsSL "https://raw.githubusercontent.com/aegisfleet/setting-up-antigravity-
 
 > **対話プロンプトについて**:
 > スクリプト実行中に「`Android SDK (APKビルド環境) もセットアップしますか？ [y/N]:`」と尋ねられます。
-> Android アプリのビルドも行いたい場合は `y`、T3 Code とエージェントのみで十分な場合は `n`（Enter）を押してください。
+> Android アプリの端末内ビルドも行いたい場合は `y`、T3 Code とエージェントのみで十分な場合は `n`（Enter）を押してください。
 > （環境変数 `INSTALL_ANDROID_SDK=1` を指定して非対話で実行することも可能です）
 
 ---
 
-## 使い方
+## 使い方 (3ステップ)
 
-### 1. T3 Code サーバーの起動
+### ステップ 1: Antigravity の初回 Google 認証
+
+Antigravity CLI (`agy`) の初回認証を行います。Termux で以下を実行します。
+
+```bash
+# 1. Ubuntu シェルに入る
+t3-shell
+
+# 2. agy を起動して Google アカウントでログイン
+agy
+```
+
+1. コンソールに Google 認証用の URL が表示されます。
+2. Android のブラウザでその URL を開き、Google アカウントでログイン・認証を許可します。
+3. 表示された認証コードを Termux のプロンプトに貼り付けて Enter を押します。
+4. 認証成功のメッセージが出たら、`exit` で Ubuntu シェルを抜けて Termux に戻ります。
+
+```bash
+exit
+```
+
+> ※ 認証情報は端末内に保存されるため、この手順は**初回のみ**で完了します。
+
+---
+
+### ステップ 2: T3 Code サーバーの起動
 
 Termux のプロンプトで以下を実行します。
 
@@ -59,7 +95,9 @@ t3-start
 
 バックグラウンドでサーバーが起動します。
 
-### 2. ブラウザまたは T3 Code アプリからアクセス
+---
+
+### ステップ 3: ブラウザからアクセスして対話開始
 
 端末の Web ブラウザ（Chrome 等）を開き、以下のアドレスにアクセスします。
 
@@ -67,13 +105,8 @@ t3-start
 
 （Google Play で配信されている Android 版「T3 Code」アプリからローカルサーバーに接続して利用することも可能です）
 
-### 3. Antigravity の認証
-
-1. T3 Code の画面左下の **Settings**（歯車アイコン）を開きます。
-2. **Providers** メニューを選択します。
-3. **Antigravity** がすでにセットアップ済みの状態で表示されます。
-4. **Sign in with Google** をクリックし、Google アカウントで認証を完了します。
-5. 認証が完了すると、Antigravity エージェントとチャットやコード生成を開始できます。
+- チャット画面ですぐに質問やコーディング指示を送信できます。
+- モデル選択メニューから **Gemini 3.8 Flash**、**Claude Sonnet 4.6**、**Claude Opus 4.6** などを自由に切り替えて利用できます。
 
 ---
 
@@ -133,8 +166,17 @@ t3-stop
 ```
 を実行して一度プロセスをクリーンアップしてから、再度 `t3-start` を実行してください。
 
+### 3. Antigravity の認証をやり直したい場合
+認証トークンを更新したい場合は、Ubuntu 内で `agy auth login` を再実行してください。
+```bash
+t3-shell
+agy auth login
+exit
+```
+
 ---
 
 ## ライセンス
 
 [MIT License](LICENSE)
+

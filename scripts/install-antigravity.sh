@@ -19,13 +19,7 @@ if [ -f "${RUNTIME_BIN_DIR}/agy_acp_server.real" ]; then
     rm -f "${RUNTIME_BIN_DIR}/agy_acp_server.real" "${RUNTIME_BIN_DIR}/localharness_external.real" 2>/dev/null || true
 fi
 
-# 2. Setup Python virtual environment for agent bridge
-if [ ! -d "$ANTIGRAVITY_DIR/venv" ]; then
-    echo "[Antigravity] Python 仮想環境を作成中..."
-    python3 -m venv "$ANTIGRAVITY_DIR/venv"
-fi
-
-# 2.5 Ensure Antigravity CLI (agy) is linked in PATH
+# 2. Ensure Antigravity CLI (agy) is linked in PATH
 if ! command -v agy >/dev/null 2>&1; then
     if [ -f "/root/.local/bin/agy" ]; then
         ln -sf /root/.local/bin/agy /usr/local/bin/agy
@@ -57,11 +51,8 @@ import os
 import uuid
 import shutil
 import subprocess
-import urllib.request
-import urllib.error
 
 LOG_FILE = "/tmp/agy_acp.log"
-API_KEY_FILE = "/root/.gemini/antigravity-acp/gemini_api_key"
 
 def log_debug(msg):
     try:
@@ -99,50 +90,6 @@ def find_agy_binary():
         if c and os.path.isfile(c) and os.access(c, os.X_OK):
             return c
     return None
-
-def get_api_key():
-    key = os.environ.get("GEMINI_API_KEY")
-    if key and key.strip():
-        return key.strip()
-    if os.path.exists(API_KEY_FILE):
-        try:
-            with open(API_KEY_FILE, "r", encoding="utf-8") as f:
-                k = f.read().strip()
-                if k:
-                    return k
-        except Exception:
-            pass
-    return None
-
-def call_gemini_api(api_key, model, prompt_text):
-    api_model = "gemini-2.5-flash"
-    if "pro" in model.lower():
-        api_model = "gemini-2.5-pro"
-    elif "flash" in model.lower():
-        api_model = "gemini-2.5-flash"
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{api_model}:generateContent?key={api_key}"
-    payload = {
-        "contents": [
-            {
-                "parts": [{"text": prompt_text}]
-            }
-        ]
-    }
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        url,
-        data=data,
-        headers={"Content-Type": "application/json"}
-    )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        res_json = json.loads(resp.read().decode("utf-8"))
-        candidates = res_json.get("candidates", [])
-        if candidates:
-            parts = candidates[0].get("content", {}).get("parts", [])
-            if parts:
-                return parts[0].get("text", "")
-    return "APIからの応答が空でした。"
 
 def build_agy_cmd(agy_bin, prompt_text, model=None, effort=None):
     cmd = [agy_bin, "-p", prompt_text, "--dangerously-skip-permissions"]
@@ -415,26 +362,7 @@ def main():
                                 }
                             }
                         })
-                elif api_key:
-                    try:
-                        reply = call_gemini_api(api_key, current_model, user_text)
-                    except Exception as e:
-                        log_debug(f"Gemini API error: {e}")
-                        reply = f"【Gemini API 呼び出しエラー】\n{str(e)}"
-                    send_response({
-                        "jsonrpc": "2.0",
-                        "method": "session/update",
-                        "params": {
-                            "sessionId": session_id,
-                            "update": {
-                                "sessionUpdate": "agent_message_chunk",
-                                "content": {
-                                    "type": "text",
-                                    "text": reply
-                                }
-                            }
-                        }
-                    })
+
                 else:
                     msg = (
                         f"【Antigravity CLI (agy) が未検出です】\n"

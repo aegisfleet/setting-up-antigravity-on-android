@@ -66,3 +66,5 @@ if ! grep -q '/usr/local/bin' /root/.bashrc 2>/dev/null; then
 fi
 
 echo "[Ubuntu] セットアップが完了しました。"
+echo ""
+echo "💡 初回のみ 'agy' コマンドを実行して Google アカウント認証を行ってください。"
