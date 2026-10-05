@@ -25,6 +25,19 @@ if [ ! -d "$ANTIGRAVITY_DIR/venv" ]; then
     python3 -m venv "$ANTIGRAVITY_DIR/venv"
 fi
 
+# 2.5 Ensure Antigravity CLI (agy) is linked in PATH
+if ! command -v agy >/dev/null 2>&1; then
+    if [ -f "/root/.local/bin/agy" ]; then
+        ln -sf /root/.local/bin/agy /usr/local/bin/agy
+    else
+        echo "[Antigravity] Antigravity CLI (agy) をインストール中..."
+        curl -fsSL https://antigravity.google/cli/install.sh | bash || true
+        if [ -f "/root/.local/bin/agy" ]; then
+            ln -sf /root/.local/bin/agy /usr/local/bin/agy
+        fi
+    fi
+fi
+
 # 3. Create dummy xdg-open to safely intercept browser opening in PRoot
 XDG_OPEN_BIN="/usr/local/bin/xdg-open"
 cat << 'EOF' > "$XDG_OPEN_BIN"
@@ -42,6 +55,8 @@ import sys
 import json
 import os
 import uuid
+import shutil
+import subprocess
 import urllib.request
 import urllib.error
 
@@ -73,6 +88,18 @@ MODELS_LIST = [
 
 current_model = "gemini-3.8-flash"
 
+def find_agy_binary():
+    candidates = [
+        shutil.which("agy"),
+        "/usr/local/bin/agy",
+        "/root/.local/bin/agy",
+        "/data/data/com.termux/files/home/.local/bin/agy"
+    ]
+    for c in candidates:
+        if c and os.path.isfile(c) and os.access(c, os.X_OK):
+            return c
+    return None
+
 def get_api_key():
     key = os.environ.get("GEMINI_API_KEY")
     if key and key.strip():
@@ -88,7 +115,6 @@ def get_api_key():
     return None
 
 def call_gemini_api(api_key, model, prompt_text):
-    # APIモデル名の対応付け
     api_model = "gemini-2.5-flash"
     if "pro" in model.lower():
         api_model = "gemini-2.5-pro"
@@ -260,65 +286,176 @@ def main():
             elif isinstance(prompt_data, str):
                 user_text = prompt_data
 
+            agy_bin = find_agy_binary()
             api_key = get_api_key()
 
-            # タイトル生成や構造化JSON出力リクエストの判定
             is_json_request = "Return only the requested JSON object" in user_text or "outputSchema" in user_text
 
             if is_json_request:
-                if api_key:
+                title_json = json.dumps({"title": "チャット"})
+                if agy_bin:
+                    try:
+                        cmd = [agy_bin, "-p", user_text]
+                        if current_model:
+                            cmd.extend(["--model", current_model])
+                        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=20)
+                        out = res.stdout.strip()
+                        if "{" in out and "}" in out:
+                            s = out[out.find("{"):out.rfind("}")+1]
+                            json.loads(s)
+                            title_json = s
+                    except Exception as e:
+                        log_debug(f"Title generation error via agy: {e}")
+                elif api_key:
                     try:
                         reply = call_gemini_api(api_key, current_model, user_text)
+                        if "{" in reply and "}" in reply:
+                            s = reply[reply.find("{"):reply.rfind("}")+1]
+                            json.loads(s)
+                            title_json = s
                     except Exception as e:
-                        log_debug(f"Gemini API JSON generation error: {e}")
-                        reply = json.dumps({"title": "チャット"})
-                else:
-                    reply = json.dumps({"title": "チャット"})
+                        log_debug(f"Title generation error via API: {e}")
+
+                send_response({
+                    "jsonrpc": "2.0",
+                    "method": "session/update",
+                    "params": {
+                        "sessionId": session_id,
+                        "update": {
+                            "sessionUpdate": "agent_message_chunk",
+                            "content": {
+                                "type": "text",
+                                "text": title_json
+                            }
+                        }
+                    }
+                })
+                send_response({
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "result": {
+                        "stopReason": "end_turn"
+                    }
+                })
             else:
-                if api_key:
+                if agy_bin:
+                    cmd = [agy_bin, "-p", user_text]
+                    if current_model:
+                        cmd.extend(["--model", current_model])
+                    log_debug(f"Spawning agy: {cmd}")
+                    try:
+                        proc = subprocess.Popen(
+                            cmd,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                            bufsize=1
+                        )
+                        full_output = ""
+                        for line in iter(proc.stdout.readline, ''):
+                            if not line:
+                                break
+                            full_output += line
+                            send_response({
+                                "jsonrpc": "2.0",
+                                "method": "session/update",
+                                "params": {
+                                    "sessionId": session_id,
+                                    "update": {
+                                        "sessionUpdate": "agent_message_chunk",
+                                        "content": {
+                                            "type": "text",
+                                            "text": line
+                                        }
+                                    }
+                                }
+                            })
+                        proc.stdout.close()
+                        proc.wait()
+                        if proc.returncode != 0:
+                            err_msg = proc.stderr.read()
+                            log_debug(f"agy exited with code {proc.returncode}: {err_msg}")
+                            if not full_output:
+                                send_response({
+                                    "jsonrpc": "2.0",
+                                    "method": "session/update",
+                                    "params": {
+                                        "sessionId": session_id,
+                                        "update": {
+                                            "sessionUpdate": "agent_message_chunk",
+                                            "content": {
+                                                "type": "text",
+                                                "text": f"【Antigravity CLI エラー】\n{err_msg}"
+                                            }
+                                        }
+                                    }
+                                })
+                    except Exception as e:
+                        log_debug(f"agy execution error: {e}")
+                        send_response({
+                            "jsonrpc": "2.0",
+                            "method": "session/update",
+                            "params": {
+                                "sessionId": session_id,
+                                "update": {
+                                    "sessionUpdate": "agent_message_chunk",
+                                    "content": {
+                                        "type": "text",
+                                        "text": f"【Antigravity 呼び出しエラー】\n{str(e)}"
+                                    }
+                                }
+                            }
+                        })
+                elif api_key:
                     try:
                         reply = call_gemini_api(api_key, current_model, user_text)
                     except Exception as e:
                         log_debug(f"Gemini API error: {e}")
-                        reply = f"【Gemini API 呼び出しエラー】\n{str(e)}\n\nAPIキーまたはネットワーク接続を確認してください。"
-                else:
-                    reply = (
-                        f"【Antigravity on Android (PRoot)】\n"
-                        f"選択モデル: {current_model}\n\n"
-                        f"受信メッセージ:\n{user_text}\n\n"
-                        f"---\n"
-                        f"💡 **本物の AI 応答を有効にする方法**\n"
-                        f"Google 公式の Antigravity サーバーバイナリは、Linux ARM64 版が 48-bit 仮想アドレス空間（TCMalloc）前提でコンパイルされており、Android カーネルの 39-bit 仮想アドレス空間では起動時に強制終了（Aborted）します。\n\n"
-                        f"本環境では軽量 ACP ブリッジを介して T3 Code と連携しているため、**Gemini API キー** を設定することで即座に本物の Gemini からリアルタイム回答を取得できます。\n\n"
-                        f"**設定手順:**\n"
-                        f"1. [Google AI Studio](https://aistudio.google.com/) で API キー（無料）を取得します。\n"
-                        f"2. Termux PRoot 内で以下を実行します:\n"
-                        f"   `echo 'あなたのGemini_APIキー' > /root/.gemini/antigravity-acp/gemini_api_key`\n"
-                        f"3. 再度チャットで質問を送信すると、本物の AI が回答します。"
-                    )
-
-            # ACP agent_message_chunk ストリーミング通知
-            send_response({
-                "jsonrpc": "2.0",
-                "method": "session/update",
-                "params": {
-                    "sessionId": session_id,
-                    "update": {
-                        "sessionUpdate": "agent_message_chunk",
-                        "content": {
-                            "type": "text",
-                            "text": reply
+                        reply = f"【Gemini API 呼び出しエラー】\n{str(e)}"
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "method": "session/update",
+                        "params": {
+                            "sessionId": session_id,
+                            "update": {
+                                "sessionUpdate": "agent_message_chunk",
+                                "content": {
+                                    "type": "text",
+                                    "text": reply
+                                }
+                            }
                         }
+                    })
+                else:
+                    msg = (
+                        f"【Antigravity CLI (agy) が未検出です】\n"
+                        f"PRoot Ubuntu 内で以下を実行して agy をインストールおよびログインしてください:\n"
+                        f"  curl -fsSL https://antigravity.google/cli/install.sh | bash\n"
+                        f"  ln -sf /root/.local/bin/agy /usr/local/bin/agy\n"
+                        f"  agy\n"
+                    )
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "method": "session/update",
+                        "params": {
+                            "sessionId": session_id,
+                            "update": {
+                                "sessionUpdate": "agent_message_chunk",
+                                "content": {
+                                    "type": "text",
+                                    "text": msg
+                                }
+                            }
+                        }
+                    })
+
+                send_response({
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "result": {
+                        "stopReason": "end_turn"
                     }
-                }
-            })
-            send_response({
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "stopReason": "end_turn"
-                }
-            })
+                })
         elif msg_id is not None:
             send_response({
                 "jsonrpc": "2.0",
