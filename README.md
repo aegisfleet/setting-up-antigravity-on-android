@@ -1,6 +1,6 @@
 # Antigravity & T3 Code on Android (Termux)
 
-Android 上の **Termux**（Google Play 版 / F-Droid 版）および **proot-distro (Ubuntu)** を利用し、[T3 Code](https://github.com/pingdotgg/t3code) と **Google Antigravity CLI (`agy`)** を連携させて、Android 端末単体で完全な自律型 AI コーディング環境をワンライナーで構築するためのスクリプト群です。
+Android 上の **Termux**（[Google Play 版](https://play.google.com/store/apps/details?id=com.termux) / [F-Droid 版](https://f-droid.org/packages/com.termux/)）および **proot-distro (Ubuntu)** を利用し、[T3 Code](https://github.com/pingdotgg/t3code) と **Google Antigravity CLI (`agy`)** を連携させて、Android 端末単体で完全な自律型 AI コーディング環境をワンライナーで構築するためのスクリプト群です。
 
 オプションで、ARM64 環境に最適化された **Android SDK (APK/AAB ビルド環境)** の自動構築もサポートします。
 
@@ -35,10 +35,18 @@ Android 上の **Termux**（Google Play 版 / F-Droid 版）および **proot-di
 ## 前提条件
 
 1. **Android 端末** (ARM64 / aarch64 推奨)
-2. **Termux** (Google Play 版 または F-Droid 版)
+2. **Termux**:
+   - [Google Play 版](https://play.google.com/store/apps/details?id=com.termux)（動作確認済み）
+   - [F-Droid 版](https://f-droid.org/packages/com.termux/) または [GitHub Releases 版](https://github.com/termux/termux-app/releases)（Termux 公式推奨）
 3. **空きストレージ容量**:
    - 基本構成 (Ubuntu + T3 Code + Antigravity): 約 2.5 GB 以上
    - Android SDK オプション追加時: 約 5 GB 以上
+
+> 💡 **Termux の入手先について**:
+> - 本プロジェクトは **Google Play 版** にて動作確認を行っています。
+> - Termux 公式コア開発チームは Google Play の規約制限への対応経緯から、現在は **F-Droid 版** および **GitHub Releases 版** をメインの公式推奨配布元としています。
+> - 本スクリプトで利用しているパッケージ（`proot-distro`, `curl`, `git` 等）および PRoot Ubuntu 環境は共通の仕様であるため、Google Play 版・F-Droid 版のどちらでもご利用いただけます。
+
 
 ---
 
