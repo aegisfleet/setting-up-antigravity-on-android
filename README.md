@@ -34,16 +34,23 @@ Android 上の **Termux**（[Google Play 版](https://play.google.com/store/apps
 
 ## 前提条件
 
-1. **Android 端末** (ARM64 / aarch64 推奨)
+1. **Android 端末** (ARM64 / aarch64):
+   - **実機検証済み端末**: **Google Pixel 10 Pro Fold**
+   - **対象となる ARM64 (aarch64) 端末の例**:
+     - **Google Pixel**: Pixel 6 以降（Pixel 7, 8, 9, 10 シリーズ、Pixel Fold / Pixel 9 Pro Fold / Pixel 10 Pro Fold、Pixel Tablet 等）
+     - **Samsung Galaxy**: Galaxy S21〜S25 シリーズ、Galaxy Z Fold / Flip シリーズ、Galaxy Tab S シリーズ等
+     - **Sony Xperia**: Xperia 1 / 5 / 10 各世代等
+     - **その他**: Snapdragon / Dimensity / Tensor 搭載の各社スマートフォン・タブレット全般（Xiaomi, OPPO, vivo, OnePlus, ASUS ROG Phone, Motorola 等）
+     - ※ 近年発売された Android 端末の大部分（ほぼ 100%）は ARM64 (aarch64) アーキテクチャです。
 2. **Termux**:
-   - [Google Play 版](https://play.google.com/store/apps/details?id=com.termux)（動作確認済み）
+   - [Google Play 版](https://play.google.com/store/apps/details?id=com.termux)（検証環境で使用）
    - [F-Droid 版](https://f-droid.org/packages/com.termux/) または [GitHub Releases 版](https://github.com/termux/termux-app/releases)（Termux 公式推奨）
 3. **空きストレージ容量**:
    - 基本構成 (Ubuntu + T3 Code + Antigravity): 約 2.5 GB 以上
    - Android SDK オプション追加時: 約 5 GB 以上
 
 > 💡 **Termux の入手先について**:
-> - 本プロジェクトは **Google Play 版** にて動作確認を行っています。
+> - 本プロジェクトは **Pixel 10 Pro Fold** 上の **Google Play 版 Termux** にて動作確認を行っています。
 > - Termux 公式コア開発チームは Google Play の規約制限への対応経緯から、現在は **F-Droid 版** および **GitHub Releases 版** をメインの公式推奨配布元としています。
 > - 本スクリプトで利用しているパッケージ（`proot-distro`, `curl`, `git` 等）および PRoot Ubuntu 環境は共通の仕様であるため、Google Play 版・F-Droid 版のどちらでもご利用いただけます。
 
