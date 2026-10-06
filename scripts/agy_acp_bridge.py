@@ -278,6 +278,50 @@ def is_quota_intent(text):
                 return True
     return False
 
+HELP_MARKDOWN = """### 📖 Antigravity & T3 Code コマンド・機能ガイド
+
+チャット欄の冒頭に以下のスラッシュコマンド（または日本語）を入力することで、エージェントの動作モードを切り替えることができます。
+
+| コマンド | 説明・用途 |
+| :--- | :--- |
+| **`/boost <指示>`** | 深い推論（Deep Thinking）、多角的な視点・戦略的計画、厳密な検証を適用して作業を遂行します。大規模設計や難解なバグに最適です。 |
+| **`/plan <指示>`** | いきなりコードを変更せず、詳細なステップバイステップの実行計画を立案・提示します。方針を合意してから着手できます。 |
+| **`/goal <指示>`** | 目標が完全に達成されるまで、自律的に試行錯誤・検証を繰り返しながら粘り強く作業を完遂します（長時間作業向き）。 |
+| **`/teamwork-preview`** | 複数の自律エージェントが協調してチームとして大規模プロジェクトを分担・推進するプレビューモードです。 |
+| **`/grill-me <テーマ>`** | 設計方針や要件を明確にするため、AI側からユーザーへ対話形式で質問・インタビューを行って仕様を詰めます。 |
+| **`/quota`** / **`/使用量`** | Antigravity の契約プランに応じた残りリクエスト枠（5時間枠・週間枠、全回復予定時刻）をトークン消費ゼロで即座に表示します。 |
+| **`/browser <指示>`** | Webブラウジングやドキュメント検索、Webアプリの調査を重視して作業を行います。 |
+| **`/learn`** | 解決した環境設定や指示内容を学習し、今後のセッションでも永続的に活用します。 |
+| **`/compact`** | これまでの会話履歴を要約・圧縮し、コンテキストトークンを節約します。 |
+
+---
+💡 **便利な使い方**:
+- チャット入力欄で **`/`（半角スラッシュ）** を入力すると、上記のコマンド一覧が日本語説明付きでサジェスト表示されます。
+- 「使用量」「残量」「ヘルプ」「コマンド」などのキーワードは、スラッシュなしの通常メッセージとして送信しても即座に実行されます。
+- サブエージェントによる並行調査を行いたい場合は、「*research サブエージェントを使って○○を調査して*」のように指示してください。
+"""
+
+def format_help_markdown():
+    return HELP_MARKDOWN
+
+def is_help_intent(text):
+    clean = re.sub(r'<[^>]+>.*?</[^>]+>', '', text, flags=re.DOTALL)
+    clean = re.sub(r'<[^>]+>', '', clean).strip().lower()
+    clean = clean.strip(' /？?！!。、.,\n\t')
+    if clean in ('help', 'commands', 'command', 'guide'):
+        return True
+    exact_keywords = {
+        'help', 'ヘルプ', 'へるぷ', 'コマンド', 'コマンド一覧',
+        '使い方', 'つかいかた', 'ガイド', 'スラッシュコマンド'
+    }
+    if clean in exact_keywords:
+        return True
+    for kw in exact_keywords:
+        if kw in clean and len(clean) <= 15:
+            if any(suffix in clean for suffix in ('一覧', '教えて', '見せて', '何がある', 'どう使う', '確認')):
+                return True
+    return False
+
 def load_cached_models():
     if os.path.exists(MODELS_CACHE_FILE):
         try:
@@ -617,9 +661,18 @@ def get_session_setup_result(session_id=None):
         },
         "configOptions": get_config_options(),
         "availableCommands": [
-            {"name": "compact", "description": "Compact conversation history"},
+            {"name": "help", "description": "コマンド・機能ガイドを表示 (ヘルプ)"},
+            {"name": "ヘルプ", "description": "利用可能なコマンドと機能ガイドを表示"},
             {"name": "quota", "description": "Antigravity の利用状況・残りクォータを確認"},
-            {"name": "使用量", "description": "利用状況・残り枠の確認 (Quota)"}
+            {"name": "使用量", "description": "利用状況・残り枠の確認 (Quota)"},
+            {"name": "boost", "description": "深い推論・戦略的思考・多角的検証を適用して実行"},
+            {"name": "plan", "description": "実装前に詳細なステップバイステップ実行計画を立案"},
+            {"name": "goal", "description": "ゴール達成まで粘り強く自律的に調査・試行錯誤し完結"},
+            {"name": "teamwork-preview", "description": "複数エージェント協調によるチーム作業モード"},
+            {"name": "grill-me", "description": "設計方針合意のためAIから質問・ヒアリングを実施"},
+            {"name": "browser", "description": "Webブラウジング・検索・Webアプリ操作を活用"},
+            {"name": "learn", "description": "過去の解決策や指示内容を永続学習・適用"},
+            {"name": "compact", "description": "会話履歴を要約・圧縮してコンテキストを最適化"}
         ]
     }
     return res
@@ -775,6 +828,33 @@ def main():
                     }
                 })
             else:
+                # ヘルプ・コマンドガイドの検知（/help, /ヘルプ, 「ヘルプ」「コマンド一覧」など）
+                if is_help_intent(user_text):
+                    log_debug(f"Directly replying to help intent for user text: {user_text[:60]}")
+                    help_text = format_help_markdown()
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "method": "session/update",
+                        "params": {
+                            "sessionId": session_id,
+                            "update": {
+                                "sessionUpdate": "agent_message_chunk",
+                                "content": {
+                                    "type": "text",
+                                    "text": help_text
+                                }
+                            }
+                        }
+                    })
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "stopReason": "end_turn"
+                        }
+                    })
+                    continue
+
                 # クォータ確認リクエストの検知（/quota, /使用量, 「使用量」「使用状況」など）
                 if is_quota_intent(user_text):
                     log_debug(f"Directly replying to quota intent for user text: {user_text[:60]}")
