@@ -156,6 +156,38 @@ cd /path/to/your-android-project
 
 ## アーキテクチャとファイル構成
 
+### システム階層構成図
+
+```mermaid
+flowchart TD
+    subgraph Android["Android OS (ARM64)"]
+        Browser["Web ブラウザ / T3 Code アプリ (http://127.0.0.1:3773)"]
+
+        subgraph Termux["Termux 環境 (ホスト層)"]
+            TermuxCmd["管理スクリプト (t3-start / t3-stop / t3-shell)"]
+
+            subgraph Ubuntu["PRoot Ubuntu 環境 (Linux コンテナ層)"]
+                T3Server["T3 Code サーバー (Node.js / 3773番ポート)"]
+                Bridge["ACP ブリッジ (agy_acp_bridge.py)"]
+                Agy["Google Antigravity CLI (agy)"]
+                AndroidSDK["Android SDK / OpenJDK 17 (オプション: APKビルド環境)"]
+            end
+        end
+    end
+
+    subgraph Cloud["Google AI バックエンド"]
+        GoogleAI["Gemini 3.8 Flash / Claude 各モデル"]
+    end
+
+    Browser <-->|"HTTP / WebSocket (チャットUI)"| T3Server
+    TermuxCmd -.->|"プロセス起動・停止・ログイン"| T3Server
+    T3Server <-->|"Agent Client Protocol (ACP: 標準入出力)"| Bridge
+    Bridge <-->|"stream-json / 会話履歴の永続化"| Agy
+    Agy <-->|"Google OAuth 認証 / API 通信"| GoogleAI
+```
+
+### ファイル構成
+
 ```
 setting-up-antigravity-on-android/
 ├── install.sh                  # Termux ホスト側エントリーポイント
