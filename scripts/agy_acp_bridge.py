@@ -260,6 +260,24 @@ def format_model_label_with_quota(model_id, base_name, qmap):
         return f"{clean_base} [{tag}]"
     return base_name
 
+def is_quota_intent(text):
+    clean = re.sub(r'<[^>]+>.*?</[^>]+>', '', text, flags=re.DOTALL)
+    clean = re.sub(r'<[^>]+>', '', clean).strip().lower()
+    clean = clean.strip(' /？?！!。、.,\n\t')
+    if clean in ('quota', 'usage', 'limit', 'limits'):
+        return True
+    exact_keywords = {
+        '使用量', '使用状況', '利用量', '利用状況', '残り枠', '残りクォータ',
+        'クォータ', 'クオータ', '残量', '残り'
+    }
+    if clean in exact_keywords:
+        return True
+    for kw in exact_keywords:
+        if kw in clean and len(clean) <= 15:
+            if any(suffix in clean for suffix in ('確認', '教えて', '見せて', '現在', '今', 'どう', 'どれくらい')):
+                return True
+    return False
+
 def load_cached_models():
     if os.path.exists(MODELS_CACHE_FILE):
         try:
@@ -600,7 +618,8 @@ def get_session_setup_result(session_id=None):
         "configOptions": get_config_options(),
         "availableCommands": [
             {"name": "compact", "description": "Compact conversation history"},
-            {"name": "quota", "description": "Antigravity の利用状況・残りクォータを確認"}
+            {"name": "quota", "description": "Antigravity の利用状況・残りクォータを確認"},
+            {"name": "使用量", "description": "利用状況・残り枠の確認 (Quota)"}
         ]
     }
     return res
@@ -756,13 +775,9 @@ def main():
                     }
                 })
             else:
-                # クォータ確認リクエストの検知（/quota, /usage, 「利用状況」などの単独指定）
-                clean_cmd = re.sub(r'<[^>]+>.*?</[^>]+>', '', user_text, flags=re.DOTALL)
-                clean_cmd = re.sub(r'<[^>]+>', '', clean_cmd).strip().lower()
-
-                if clean_cmd in ("/quota", "/usage", "quota", "usage", "/limit", "/limits") or \
-                   clean_cmd in ("利用状況", "使用状況", "残り枠", "残りクォータ", "クォータ確認", "クオータ確認", "残量確認", "利用状況確認", "クォータ", "クオータ"):
-                    log_debug(f"Directly replying to quota command: {clean_cmd}")
+                # クォータ確認リクエストの検知（/quota, /使用量, 「使用量」「使用状況」など）
+                if is_quota_intent(user_text):
+                    log_debug(f"Directly replying to quota intent for user text: {user_text[:60]}")
                     quota_data = get_quota_summary(force_refresh=True)
                     quota_text = format_quota_markdown(quota_data)
                     send_response({

@@ -199,12 +199,14 @@ proot-distro login ubuntu
 EOF
 chmod +x "${PREFIX_BIN}/t3-shell"
 
-# t3-quota
+# t3-quota (日本語コマンド「使用量」「使用状況」も作成)
 cat << 'EOF' > "${PREFIX_BIN}/t3-quota"
 #!/data/data/com.termux/files/usr/bin/bash
 proot-distro login ubuntu -- bash -c "python3 /root/setting-up-antigravity-on-android/scripts/check_quota.py"
 EOF
 chmod +x "${PREFIX_BIN}/t3-quota"
+ln -sf "${PREFIX_BIN}/t3-quota" "${PREFIX_BIN}/使用量"
+ln -sf "${PREFIX_BIN}/t3-quota" "${PREFIX_BIN}/使用状況"
 
 echo ""
 echo -e "${GREEN}================================================================${NC}"

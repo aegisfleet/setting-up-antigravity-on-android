@@ -90,6 +90,8 @@ cat << 'EOF' > /usr/local/bin/t3-quota
 python3 /opt/antigravity/bin/check_quota.py "$@"
 EOF
 chmod +x /usr/local/bin/t3-quota
+ln -sf /usr/local/bin/t3-quota /usr/local/bin/使用量
+ln -sf /usr/local/bin/t3-quota /usr/local/bin/使用状況
 
 # 8. Pre-configure T3 Code settings.json
 SETTINGS_FILE="/root/.t3/userdata/settings.json"
