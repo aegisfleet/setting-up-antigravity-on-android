@@ -4,7 +4,7 @@
   <img src="assets/overview.jpg" alt="Antigravity & T3 Code on Android Overview" width="100%" />
 </p>
 
-Android 上の **Termux**（[Google Play 版](https://play.google.com/store/apps/details?id=com.termux) / [F-Droid 版](https://f-droid.org/packages/com.termux/)）および **proot-distro (Ubuntu)** を利用し、[T3 Code](https://github.com/pingdotgg/t3code) と **Google Antigravity CLI (`agy`)** を連携させて、Android 端末単体で完全な自律型 AI コーディング環境をワンライナーで構築するためのスクリプト群です。
+Android 上の **Termux**（Google Play 版 / GitHub Releases 版 / F-Droid 版）および **proot-distro (Ubuntu)** を利用し、[T3 Code](https://github.com/pingdotgg/t3code) と **Google Antigravity CLI (`agy`)** を連携させて、Android 端末単体で完全な自律型 AI コーディング環境をワンライナーで構築するためのスクリプト群です。
 
 オプションで、ARM64 環境に最適化された **Android SDK (APK/AAB ビルド環境)** の自動構築もサポートします。
 
@@ -62,16 +62,28 @@ Android 上の **Termux**（[Google Play 版](https://play.google.com/store/apps
      - **その他**: Snapdragon / Dimensity / Tensor 搭載の各社スマートフォン・タブレット全般（Xiaomi, OPPO, vivo, OnePlus, ASUS ROG Phone, Motorola 等）
      - ※ 近年発売された Android 端末の大部分（ほぼ 100%）は ARM64 (aarch64) アーキテクチャです。
 2. **Termux**:
-   - [Google Play 版](https://play.google.com/store/apps/details?id=com.termux)（検証環境で使用）
-   - [F-Droid 版](https://f-droid.org/packages/com.termux/) または [GitHub Releases 版](https://github.com/termux/termux-app/releases)（Termux 公式推奨）
+   - [Google Play 版](https://play.google.com/store/apps/details?id=com.termux)
+   - [GitHub Releases 版](https://github.com/termux/termux-app/releases) / [F-Droid 版](https://f-droid.org/packages/com.termux/)
 3. **空きストレージ容量**:
    - 基本構成 (Ubuntu + T3 Code + Antigravity): 約 2.5 GB 以上
    - Android SDK オプション追加時: 約 5 GB 以上
 
-> 💡 **Termux の入手先について**:
-> - 本プロジェクトは **Pixel 10 Pro Fold** 上の **Google Play 版 Termux** にて動作確認を行っています。
-> - Termux 公式コア開発チームは Google Play の規約制限への対応経緯から、現在は **F-Droid 版** および **GitHub Releases 版** をメインの公式推奨配布元としています。
-> - 本スクリプトで利用しているパッケージ（`proot-distro`, `curl`, `git` 等）および PRoot Ubuntu 環境は共通の仕様であるため、Google Play 版・F-Droid 版のどちらでもご利用いただけます。
+> 💡 **Termux の入手先による「できることの違い」について**:
+> 
+> 利用する Termux の入手先によって、Android 端末のハードウェア連携（Termux:API）で**できることが異なります**。用途に合わせて選択してください。
+> 
+> | 機能・用途 | Google Play 版 | GitHub Releases 版 / F-Droid 版 |
+> | :--- | :---: | :---: |
+> | **導入の手軽さ** | ⭐ **極めて手軽**（Play ストアからワンタップ） | APK の手動ダウンロードまたは F-Droid が必要 |
+> | **T3 Code / Antigravity CLI 動作** | ✅ **完全対応** | ✅ **完全対応** |
+> | **自律コーディング・Git・SDK ビルド** | ✅ **完全対応** | ✅ **完全対応** |
+> | **端末情報取得（バッテリー・カメラ情報等）** | ✅ **対応** | ✅ **対応** |
+> | **📸 カメラ撮影 (`termux-camera-photo`)** | ❌ **非対応**（Google Play 版は API 未実装） | ✅ **完全対応**（Termux:API 連携） |
+> | **🎙 マイク録音・高度なデバイス制御** | ⚠️ **制限あり** | ✅ **完全対応**（Termux:API 連携） |
+> 
+> - **どちらを選ぶべきか？**:
+>   - **Google Play 版（推奨・開発用途）**: AI による自律コーディング、ファイル作成・編集、Git 操作、Android アプリ（APK）のビルドなど、**通常の開発・エージェント環境として使う場合は Google Play 版で十分かつ最も手軽**です（本プロジェクトの基本動作検証済み）。
+>   - **GitHub Releases 版 / F-Droid 版（ハードウェア連携用途）**: AI からカメラを起動して実世界を撮影・画像認識させたり、マイク録音など **Android 端末のハードウェア機能をフルに制御したい場合**はこちらを選択してください。※本体と [Termux:API](https://github.com/termux/termux-api/releases) アプリを**必ず同一の入手元（GitHub なら両方 GitHub、F-Droid なら両方 F-Droid）**からインストールする必要があります。
 
 
 ---
