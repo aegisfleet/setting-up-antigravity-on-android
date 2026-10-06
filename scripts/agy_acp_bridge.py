@@ -7,6 +7,7 @@ Supports multi-turn conversation persistence, real-time stream-json parsing, and
 import sys
 import json
 import os
+import re
 import time
 import uuid
 import shutil
@@ -362,6 +363,46 @@ def execute_agy(cmd, session_id, agy_env):
         retcode = -1
     return retcode, full_output, err_msg
 
+def extract_thread_title(user_text):
+    if not user_text:
+        return "新しいチャット"
+
+    # User message: 以降が存在する場合は実際のユーザー入力を抽出
+    if "User message:" in user_text:
+        content = user_text.split("User message:", 1)[1].strip()
+    else:
+        content = user_text.strip()
+
+    # XMLタグやシステムプロンプトタグ (<runtime_info> 等) を除去
+    content = re.sub(r'<[^>]+>.*?</[^>]+>', '', content, flags=re.DOTALL)
+    content = re.sub(r'<[^>]+>', '', content)
+
+    # 先頭の空行やマークダウン記号を除去
+    lines = [l.strip() for l in content.splitlines() if l.strip()]
+    if not lines:
+        return "新しいチャット"
+
+    first_line = re.sub(r'^[#*\-`\s]+', '', lines[0]).strip()
+    if len(first_line) < 6 and len(lines) > 1:
+        second_line = re.sub(r'^[#*\-`\s]+', '', lines[1]).strip()
+        first_line = f"{first_line} {second_line}".strip()
+
+    # 最初の文を取り出す（。や！？）
+    parts = re.split(r'([。？！?!])', first_line)
+    if len(parts) >= 2 and len(parts[0].strip()) >= 4:
+        cand = parts[0].strip()
+        if parts[1] in '？?':
+            cand += parts[1]
+    else:
+        cand = first_line.strip()
+
+    cand = cand.rstrip('。、,. ')
+
+    if len(cand) > 30:
+        cand = cand[:30].rstrip('、 ,') + '…'
+
+    return cand or "新しいチャット"
+
 def get_config_options():
     models = get_available_models()
     cur = normalize_model_id(current_model, models)
@@ -521,13 +562,9 @@ def main():
 
             if is_json_request:
                 # タイトル生成要求には即座に軽量JSONを返して並行競合を防止
-                title = "チャット"
-                for line in user_text.splitlines():
-                    clean_line = line.strip()
-                    if clean_line and not clean_line.startswith("<") and not clean_line.startswith("Return only") and not clean_line.startswith("Use only"):
-                        title = clean_line[:24]
-                        break
-                title_json = json.dumps({"title": title})
+                title = extract_thread_title(user_text)
+                log_debug(f"Generated thread title: {title}")
+                title_json = json.dumps({"title": title, "needsRefinement": False}, ensure_ascii=False)
                 send_response({
                     "jsonrpc": "2.0",
                     "method": "session/update",
