@@ -76,7 +76,22 @@ exit 0
 EOF
 chmod +x "$HARNESS"
 
-# 7. Pre-configure T3 Code settings.json
+# 7. Install check_quota.py and t3-quota
+QUOTA_PY="${RUNTIME_BIN_DIR}/check_quota.py"
+if [ -f "${SCRIPT_DIR}/check_quota.py" ]; then
+    cp -f "${SCRIPT_DIR}/check_quota.py" "$QUOTA_PY"
+else
+    curl -fsSL https://raw.githubusercontent.com/aegisfleet/setting-up-antigravity-on-android/main/scripts/check_quota.py -o "$QUOTA_PY"
+fi
+chmod +x "$QUOTA_PY"
+
+cat << 'EOF' > /usr/local/bin/t3-quota
+#!/usr/bin/env bash
+python3 /opt/antigravity/bin/check_quota.py "$@"
+EOF
+chmod +x /usr/local/bin/t3-quota
+
+# 8. Pre-configure T3 Code settings.json
 SETTINGS_FILE="/root/.t3/userdata/settings.json"
 echo "[Antigravity] T3 Code の設定ファイル ($SETTINGS_FILE) を更新中..."
 

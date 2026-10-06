@@ -13,11 +13,18 @@ import uuid
 import shutil
 import subprocess
 import threading
+import urllib.request
+import urllib.error
+from datetime import datetime, timezone
 
 LOG_FILE = "/tmp/agy_acp.log"
 SESSION_MAP_FILE = "/root/.gemini/antigravity-acp/session_map.json"
 MODELS_CACHE_FILE = "/root/.gemini/antigravity-acp/models_cache.json"
 MODELS_CACHE_TTL = 3600 * 12  # 12時間
+QUOTA_CACHE_FILE = "/root/.gemini/antigravity-acp/quota_cache.json"
+QUOTA_CACHE_TTL = 90  # 90秒
+cached_quota_summary = None
+cached_quota_time = 0
 
 FALLBACK_MODELS = [
     {"modelId": "gemini-3.8-flash-medium", "name": "Gemini 3.8 Flash (Medium)"},
@@ -102,7 +109,156 @@ def find_agy_binary():
     for c in candidates:
         if c and os.path.isfile(c) and os.access(c, os.X_OK):
             return c
-    return None
+def fetch_quota_summary():
+    global cached_quota_summary, cached_quota_time
+    token_file = "/root/.gemini/antigravity-cli/antigravity-oauth-token"
+    if not os.path.exists(token_file):
+        return {"error": "OAuth token file not found. Please log in with agy first."}
+    try:
+        with open(token_file, "r", encoding="utf-8") as f:
+            token_data = json.load(f)
+        access_token = token_data.get("token", {}).get("access_token")
+        if not access_token:
+            return {"error": "Access token is empty. Please log in with agy."}
+    except Exception as e:
+        return {"error": f"Failed to read oauth token: {e}"}
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+        "User-Agent": "Antigravity-CLI"
+    }
+    url = "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary"
+    req = urllib.request.Request(url, data=b"{}", headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            cached_quota_summary = data
+            cached_quota_time = time.time()
+            try:
+                os.makedirs(os.path.dirname(QUOTA_CACHE_FILE), exist_ok=True)
+                with open(QUOTA_CACHE_FILE, "w", encoding="utf-8") as f:
+                    json.dump({"timestamp": cached_quota_time, "data": data}, f)
+            except Exception:
+                pass
+            return data
+    except Exception as e:
+        log_debug(f"Error fetching quota summary: {e}")
+        return {"error": str(e)}
+
+def get_quota_summary(force_refresh=False):
+    global cached_quota_summary, cached_quota_time
+    now = time.time()
+    if not force_refresh and cached_quota_summary and (now - cached_quota_time) < QUOTA_CACHE_TTL:
+        return cached_quota_summary
+
+    if not force_refresh and os.path.exists(QUOTA_CACHE_FILE):
+        try:
+            with open(QUOTA_CACHE_FILE, "r", encoding="utf-8") as f:
+                c = json.load(f)
+                if (now - c.get("timestamp", 0)) < QUOTA_CACHE_TTL:
+                    cached_quota_summary = c.get("data")
+                    cached_quota_time = c.get("timestamp", 0)
+                    return cached_quota_summary
+        except Exception:
+            pass
+
+    return fetch_quota_summary()
+
+def make_progress_bar(fraction, width=15):
+    filled = int(round(fraction * width))
+    filled = max(0, min(width, filled))
+    return "█" * filled + "░" * (width - filled)
+
+def parse_relative_time(iso_str):
+    if not iso_str:
+        return ""
+    try:
+        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        diff = dt - now
+        total_sec = max(0, int(diff.total_seconds()))
+        hours = total_sec // 3600
+        mins = (total_sec % 3600) // 60
+        if hours >= 24:
+            days = hours // 24
+            rem_hours = hours % 24
+            return f"{days}日{rem_hours}時間後"
+        elif hours > 0:
+            return f"{hours}時間{mins}分後"
+        else:
+            return f"{mins}分後"
+    except Exception:
+        return iso_str
+
+def format_quota_markdown(data):
+    if not data:
+        return "⚠️ **クォータ情報の取得に失敗しました**: データが空です。"
+    if "error" in data:
+        err = data["error"]
+        return f"⚠️ **クォータ情報の取得に失敗しました**: {err}\n\nTermux で `agy` を起動して Google アカウント認証が完了しているかご確認ください。"
+
+    groups = data.get("groups", [])
+    if not groups:
+        return "利用状況データが見つかりませんでした。"
+
+    lines = ["### 📊 Google Antigravity 利用状況 (Quota & Limits)", ""]
+    for g in groups:
+        name = g.get("displayName", "Group")
+        desc = g.get("description", "")
+        lines.append(f"#### 🔹 **{name}**")
+        if desc:
+            lines.append(f"*{desc}*")
+        lines.append("")
+        for b in g.get("buckets", []):
+            dname = b.get("displayName", "Limit")
+            frac = b.get("remainingFraction", 1.0)
+            pct = frac * 100.0
+            bar = make_progress_bar(frac)
+            rel_time = parse_relative_time(b.get("resetTime", ""))
+            reset_info = f" (🔄 全回復: 約 {rel_time})" if rel_time else ""
+            
+            if pct > 50:
+                icon = "🟢"
+            elif pct > 20:
+                icon = "🟡"
+            else:
+                icon = "🔴"
+
+            lines.append(f"- {icon} **{dname}**: `[{bar}]` **{pct:.1f}% 残り**{reset_info}")
+        lines.append("")
+
+    lines.append("---")
+    lines.append("> 💡 **ヒント**: モデルグループごとに「5時間枠（短期集中用）」と「週間枠（全体契約用）」が共有されています。残り枠が少なくなった場合は別グループのモデル（Gemini ⇔ Claude）に切り替えることで作業を継続できます。")
+    return "\n".join(lines)
+
+def get_quota_short_map():
+    data = get_quota_summary()
+    res = {}
+    if not data or "error" in data:
+        return res
+    for g in data.get("groups", []):
+        dname = g.get("displayName", "").lower()
+        key = "gemini" if "gemini" in dname else ("claude" if "claude" in dname else "other")
+        b_5h = None
+        for b in g.get("buckets", []):
+            if b.get("window") == "5h":
+                b_5h = int(round(b.get("remainingFraction", 1.0) * 100))
+        if b_5h is not None:
+            res[key] = f"残{b_5h}%"
+    return res
+
+def format_model_label_with_quota(model_id, base_name, qmap):
+    mid_lower = model_id.lower()
+    tag = None
+    if "gemini" in mid_lower and "gemini" in qmap:
+        tag = qmap["gemini"]
+    elif ("claude" in mid_lower or "gpt" in mid_lower) and "claude" in qmap:
+        tag = qmap["claude"]
+    if tag:
+        clean_base = re.sub(r'\s*\[残\d+%\]', '', base_name)
+        return f"{clean_base} [{tag}]"
+    return base_name
 
 def load_cached_models():
     if os.path.exists(MODELS_CACHE_FILE):
@@ -406,6 +562,7 @@ def extract_thread_title(user_text):
 def get_config_options():
     models = get_available_models()
     cur = normalize_model_id(current_model, models)
+    qmap = get_quota_short_map()
     return [
         {
             "id": "model",
@@ -413,7 +570,10 @@ def get_config_options():
             "type": "select",
             "currentValue": cur,
             "options": [
-                {"value": m["modelId"], "name": m["name"]}
+                {
+                    "value": m["modelId"],
+                    "name": format_model_label_with_quota(m["modelId"], m["name"], qmap)
+                }
                 for m in models
             ]
         }
@@ -423,15 +583,24 @@ def get_session_setup_result(session_id=None):
     sid = session_id or str(uuid.uuid4())
     models = get_available_models()
     cur = normalize_model_id(current_model, models)
+    qmap = get_quota_short_map()
+    decorated_models = [
+        {
+            "modelId": m["modelId"],
+            "name": format_model_label_with_quota(m["modelId"], m["name"], qmap)
+        }
+        for m in models
+    ]
     res = {
         "sessionId": sid,
         "models": {
             "currentModelId": cur,
-            "availableModels": models
+            "availableModels": decorated_models
         },
         "configOptions": get_config_options(),
         "availableCommands": [
-            {"name": "compact", "description": "Compact conversation history"}
+            {"name": "compact", "description": "Compact conversation history"},
+            {"name": "quota", "description": "Antigravity の利用状況・残りクォータを確認"}
         ]
     }
     return res
@@ -587,6 +756,38 @@ def main():
                     }
                 })
             else:
+                # クォータ確認リクエストの検知（/quota, /usage, 「利用状況」などの単独指定）
+                clean_cmd = re.sub(r'<[^>]+>.*?</[^>]+>', '', user_text, flags=re.DOTALL)
+                clean_cmd = re.sub(r'<[^>]+>', '', clean_cmd).strip().lower()
+
+                if clean_cmd in ("/quota", "/usage", "quota", "usage", "/limit", "/limits") or \
+                   clean_cmd in ("利用状況", "使用状況", "残り枠", "残りクォータ", "クォータ確認", "クオータ確認", "残量確認", "利用状況確認", "クォータ", "クオータ"):
+                    log_debug(f"Directly replying to quota command: {clean_cmd}")
+                    quota_data = get_quota_summary(force_refresh=True)
+                    quota_text = format_quota_markdown(quota_data)
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "method": "session/update",
+                        "params": {
+                            "sessionId": session_id,
+                            "update": {
+                                "sessionUpdate": "agent_message_chunk",
+                                "content": {
+                                    "type": "text",
+                                    "text": quota_text
+                                }
+                            }
+                        }
+                    })
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "stopReason": "end_turn"
+                        }
+                    })
+                    continue
+
                 if agy_bin:
                     agy_conv_id = get_agy_conversation(session_id)
                     # 1回目: 選択モデル・セッションID引き継ぎで実行

@@ -40,10 +40,14 @@ Android 上の **Termux**（[Google Play 版](https://play.google.com/store/apps
   - Android 特有の仮想アドレス空間（39-bit VA）起因で公式 ACP サーバーバイナリが異常終了（Aborted）する問題を解消する軽量 ACP ブリッジ (`scripts/agy_acp_bridge.py`) を提供。
   - `stream-json` 連携により、応答テキストの逐次ストリーミングに加えてツール実行状況（Bash コマンド実行等）をリアルタイム可視化。
   - Gemini 3 系モデルでの `--effort medium` 自動付与や、モデル・セッションエラー時の自動フォールバック機構を内蔵。
+- 📊 **利用状況 (Quota / レート制限) のリアルタイム把握**:
+  - **T3 Code チャット画面**: `/quota` または `/usage` と送信するだけで、**推論トークンを消費することなく**即座に最新の残りパーセント（Gemini / Claude 各グループの 5時間枠・週間枠、全回復予定時刻）をグラフィカルに表示。
+  - **モデル選択メニュー**: ドロップダウンのモデル名横に現在の残り枠（例: `Gemini 3.8 Flash (High) [残72%]`）を動的表示。切り替え前に残量を一目で確認可能。
+  - **ターミナル連携**: Termux / Ubuntu 上で `t3-quota` コマンドを実行するだけでも即座に確認可能。
 - 🛠 **Android SDK ビルド環境（オプション）**:
   - ARM64 版 `aapt2` のパッチ適用済み。端末内での Gradle による APK ビルドが可能。
 - 📱 **直感的な操作コマンド**:
-  - `t3-start`、`t3-stop`、`t3-status`、`t3-shell` などの Termux コマンドを自動生成。
+  - `t3-start`、`t3-stop`、`t3-status`、`t3-quota`、`t3-shell` などの Termux コマンドを自動生成。
 
 ---
 
@@ -151,6 +155,7 @@ t3-start
 | `t3-start` | T3 Code サーバーをバックグラウンド起動 (`http://127.0.0.1:3773`) |
 | `t3-stop` | T3 Code サーバーを停止 |
 | `t3-status` | サーバーの稼働状態と直近のログを確認 |
+| `t3-quota` | Antigravity の利用状況（残りクォータ / レート制限）を確認 |
 | `t3-shell` | Ubuntu PRoot 環境の bash シェルに対話的にログイン |
 
 ---
@@ -192,12 +197,13 @@ flowchart TD
         Browser["Web ブラウザ / T3 Code アプリ (http://127.0.0.1:3773)"]
 
         subgraph Termux["Termux 環境 (ホスト層)"]
-            TermuxCmd["管理スクリプト (t3-start / t3-stop / t3-shell)"]
+            TermuxCmd["管理スクリプト (t3-start / t3-stop / t3-quota / t3-shell)"]
 
             subgraph Ubuntu["PRoot Ubuntu 環境 (Linux コンテナ層)"]
                 T3Server["T3 Code サーバー (Node.js / 3773番ポート)"]
                 Bridge["ACP ブリッジ (agy_acp_bridge.py)"]
                 Agy["Google Antigravity CLI (agy)"]
+                Quota["クォータ監視 (check_quota.py)"]
                 AndroidSDK["Android SDK / OpenJDK 17 (オプション: APKビルド環境)"]
             end
         end
@@ -205,12 +211,15 @@ flowchart TD
 
     subgraph Cloud["Google AI バックエンド"]
         GoogleAI["Gemini 3.8 Flash / Claude 各モデル"]
+        QuotaAPI["Quota API (retrieveUserQuotaSummary)"]
     end
 
-    Browser <-->|"HTTP / WebSocket (チャットUI)"| T3Server
+    Browser <-->|"HTTP / WebSocket (チャットUI / /quota)"| T3Server
     TermuxCmd -.->|"プロセス起動・停止・ログイン"| T3Server
     T3Server <-->|"Agent Client Protocol (ACP: 標準入出力)"| Bridge
     Bridge <-->|"stream-json / 会話履歴の永続化"| Agy
+    Bridge <-->|"OAuth トークン認証"| QuotaAPI
+    Quota <-->|"OAuth トークン認証"| QuotaAPI
     Agy <-->|"Google OAuth 認証 / API 通信"| GoogleAI
 ```
 
@@ -222,7 +231,8 @@ setting-up-antigravity-on-android/
 └── scripts/
     ├── setup-ubuntu.sh         # Ubuntu PRoot 環境の初期構築
     ├── install-antigravity.sh  # Antigravity プロバイダ構成 & ブリッジ登録
-    ├── agy_acp_bridge.py       # T3 Code ACP ↔ agy CLI Python ブリッジ (会話永続化/ストリーミング)
+    ├── agy_acp_bridge.py       # T3 Code ACP ↔ agy CLI Python ブリッジ (会話永続化/ストリーミング/クォータ管理)
+    ├── check_quota.py          # Antigravity 利用状況・レート制限チェッカー
     ├── t3-server-manager.sh    # T3 Code バックグラウンドサーバー管理
     └── install-android-sdk.sh  # Android SDK (aapt2 ARM64対応) セットアップ
 ```
@@ -234,6 +244,9 @@ T3 Code は標準入力/標準出力経由の Agent Client Protocol (ACP) を用
 1. **セッション永続化**: T3 Code の `sessionId` を Antigravity の `conversation_id` にマッピングし、`~/.gemini/antigravity-acp/session_map.json` に保存。2ターン目以降は `--conversation <ID>` を自動付与して過去の文脈を引き継ぎます。
 2. **リアルタイムストリーミング**: `agy` を `--output-format stream-json` で駆動し、`text_delta` による思考・文章出力や、ツール実行通知（`⚙️ Tool: <name>`）をリアルタイムに T3 Code UI へ中継します。
 3. **プラン別モデル動的同期 & 最適化**: `agy models` から Google アカウント契約プランに応じた利用可能モデル一覧を動的取得・ローカルキャッシュ (`~/.gemini/antigravity-acp/models_cache.json`) し、T3 Code UI の選択肢に完全同期。旧モデル ID のエイリアス自動解決やモデル・セッションエラー時の自動フォールバック機構を内蔵。
+4. **利用状況 (Quota) のゼロトークン即時回答 & メニュー連携**:
+   - チャットで `/quota` や「利用状況」が送られた場合、AIモデルを起動することなく直接 Google Quota API から最新の利用残量を判定し、トークン消費ゼロで即座にグラフィカル表示。
+   - モデル選択ドロップダウンの各モデル名に、現在のグループ残り枠（例: `[残72%]`）を動的付与。
 
 ---
 

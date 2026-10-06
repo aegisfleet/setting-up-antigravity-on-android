@@ -199,6 +199,13 @@ proot-distro login ubuntu
 EOF
 chmod +x "${PREFIX_BIN}/t3-shell"
 
+# t3-quota
+cat << 'EOF' > "${PREFIX_BIN}/t3-quota"
+#!/data/data/com.termux/files/usr/bin/bash
+proot-distro login ubuntu -- bash -c "python3 /root/setting-up-antigravity-on-android/scripts/check_quota.py"
+EOF
+chmod +x "${PREFIX_BIN}/t3-quota"
+
 echo ""
 echo -e "${GREEN}================================================================${NC}"
 echo -e "${GREEN}  セットアップが完了しました！${NC}"
@@ -208,6 +215,7 @@ echo -e "利用可能なコマンド:"
 echo -e "  ${CYAN}t3-start${NC}   : T3 Code サーバーを起動 (http://127.0.0.1:3773)"
 echo -e "  ${CYAN}t3-stop${NC}    : T3 Code サーバーを停止"
 echo -e "  ${CYAN}t3-status${NC}  : サーバーの稼働状態とログを確認"
+echo -e "  ${CYAN}t3-quota${NC}   : Antigravity の利用状況・残りクォータを確認"
 echo -e "  ${CYAN}t3-shell${NC}   : Ubuntu PRoot 環境のシェルにログイン"
 echo ""
 echo -e "${YELLOW}💡 【初回のみ】Antigravity の Google アカウント認証を行ってください:${NC}"
