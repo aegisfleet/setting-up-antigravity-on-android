@@ -12,11 +12,9 @@ Android 上の **Termux**（Google Play 版 / F-Droid 版）および **proot-di
 - 🤖 **公式 Antigravity CLI (`agy`) ネイティブ連携**:
   - Google 公式の Antigravity CLI (`linux_arm64`) を利用。Termux / PRoot Ubuntu 環境から **Google アカウント認証 (OAuth)** で本物の AI と直接対話可能。
   - API キーの発行や従量課金設定は不要。
-- 🧠 **最新モデル対応**:
-  - **Gemini 3.8 Flash**（デフォルト・超高速レスポンス）
-  - **Claude Sonnet 4.6**（高精度コーディング）
-  - **Claude Opus 4.6**（高度な推論）
-  - Gemini 2.5 Pro / Flash
+- 🧠 **最新モデル & 契約プラン動的同期**:
+  - `agy models` によりログイン中アカウントの契約プランで利用可能なモデル（Gemini 3.8 Flash, Claude Sonnet 4.6, Claude Opus 4.6, GPT-OSS 等）を自動取得して T3 Code 画面に完全同期。
+  - アカウント別の思考レベル（High / Medium / Low）の選択にもネイティブ対応。
 - ⚡ **自律エージェント機能（全ツール自動承認）**:
   - エージェント実行時に `--dangerously-skip-permissions` を自動適用。
   - ファイルの作成・編集、ディレクトリ探索、シェルコマンドの実行などを AI が自律的に完結。
@@ -205,7 +203,7 @@ T3 Code は標準入力/標準出力経由の Agent Client Protocol (ACP) を用
 
 1. **セッション永続化**: T3 Code の `sessionId` を Antigravity の `conversation_id` にマッピングし、`~/.gemini/antigravity-acp/session_map.json` に保存。2ターン目以降は `--conversation <ID>` を自動付与して過去の文脈を引き継ぎます。
 2. **リアルタイムストリーミング**: `agy` を `--output-format stream-json` で駆動し、`text_delta` による思考・文章出力や、ツール実行通知（`⚙️ Tool: <name>`）をリアルタイムに T3 Code UI へ中継します。
-3. **モデル & Effort 最適化**: Gemini 3.8 Flash 等で必要な `--effort medium` を自動指定し、未対応モデルやセッション欠落時には安全に自動リトライします。
+3. **プラン別モデル動的同期 & 最適化**: `agy models` から Google アカウント契約プランに応じた利用可能モデル一覧を動的取得・ローカルキャッシュ (`~/.gemini/antigravity-acp/models_cache.json`) し、T3 Code UI の選択肢に完全同期。旧モデル ID のエイリアス自動解決やモデル・セッションエラー時の自動フォールバック機構を内蔵。
 
 ---
 

@@ -7,12 +7,42 @@ Supports multi-turn conversation persistence, real-time stream-json parsing, and
 import sys
 import json
 import os
+import time
 import uuid
 import shutil
 import subprocess
+import threading
 
 LOG_FILE = "/tmp/agy_acp.log"
 SESSION_MAP_FILE = "/root/.gemini/antigravity-acp/session_map.json"
+MODELS_CACHE_FILE = "/root/.gemini/antigravity-acp/models_cache.json"
+MODELS_CACHE_TTL = 3600 * 12  # 12時間
+
+FALLBACK_MODELS = [
+    {"modelId": "gemini-3.8-flash-medium", "name": "Gemini 3.8 Flash (Medium)"},
+    {"modelId": "gemini-3.8-flash-high", "name": "Gemini 3.8 Flash (High)"},
+    {"modelId": "gemini-3.8-flash-low", "name": "Gemini 3.8 Flash (Low)"},
+    {"modelId": "gemini-3.7-flash-medium", "name": "Gemini 3.7 Flash (Medium)"},
+    {"modelId": "gemini-3.6-flash-medium", "name": "Gemini 3.6 Flash (Medium)"},
+    {"modelId": "gemini-3.1-pro-high", "name": "Gemini 3.1 Pro (High)"},
+    {"modelId": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6 (Thinking)"},
+    {"modelId": "claude-opus-4-6-thinking", "name": "Claude Opus 4.6 (Thinking)"},
+    {"modelId": "gpt-oss-120b-medium", "name": "GPT-OSS 120B (Medium)"},
+]
+
+MODEL_ALIASES = {
+    "gemini-3.8-flash": "gemini-3.8-flash-medium",
+    "gemini-3.7-flash": "gemini-3.7-flash-medium",
+    "gemini-3.6-flash": "gemini-3.6-flash-medium",
+    "gemini-3.1-pro": "gemini-3.1-pro-high",
+    "claude-sonnet-4.6": "claude-sonnet-4-6",
+    "claude-opus-4.6": "claude-opus-4-6-thinking",
+    "gemini-2.5-pro": "gemini-3.1-pro-high",
+    "gemini-2.5-flash": "gemini-3.8-flash-medium",
+}
+
+current_model = "gemini-3.8-flash-medium"
+cached_models = []
 
 def log_debug(msg):
     try:
@@ -26,18 +56,6 @@ def send_response(obj):
     log_debug(">> " + raw)
     sys.stdout.write(raw + "\n")
     sys.stdout.flush()
-
-# モデル定義 (デフォルト: Gemini 3.8 Flash)
-MODELS_LIST = [
-    {"modelId": "gemini-3.8-flash", "name": "Gemini 3.8 Flash (Default)"},
-    {"modelId": "claude-sonnet-4.6", "name": "Claude Sonnet 4.6"},
-    {"modelId": "claude-opus-4.6", "name": "Claude Opus 4.6"},
-    # 既存・過去スレッド互換用
-    {"modelId": "gemini-2.5-pro", "name": "Gemini 2.5 Pro"},
-    {"modelId": "gemini-2.5-flash", "name": "Gemini 2.5 Flash"}
-]
-
-current_model = "gemini-3.8-flash"
 
 def load_session_map():
     if os.path.exists(SESSION_MAP_FILE):
@@ -85,7 +103,109 @@ def find_agy_binary():
             return c
     return None
 
+def load_cached_models():
+    if os.path.exists(MODELS_CACHE_FILE):
+        try:
+            with open(MODELS_CACHE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict) and "models" in data:
+                    models = data.get("models", [])
+                    ts = data.get("timestamp", 0)
+                    if isinstance(models, list) and models:
+                        return models, ts
+        except Exception as e:
+            log_debug(f"Error loading models cache: {e}")
+    return [], 0
+
+def save_cached_models(models):
+    try:
+        os.makedirs(os.path.dirname(MODELS_CACHE_FILE), exist_ok=True)
+        with open(MODELS_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "timestamp": time.time(),
+                "models": models
+            }, f, indent=2, ensure_ascii=False)
+        log_debug(f"Saved {len(models)} models to {MODELS_CACHE_FILE}")
+    except Exception as e:
+        log_debug(f"Error saving models cache: {e}")
+
+def fetch_models_from_agy(agy_bin=None):
+    b = agy_bin or find_agy_binary()
+    if not b:
+        return []
+    try:
+        proc = subprocess.run(
+            [b, "models"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=15
+        )
+        if proc.returncode == 0:
+            parsed = []
+            for line in proc.stdout.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split(None, 1)
+                if parts:
+                    m_id = parts[0]
+                    m_name = parts[1] if len(parts) > 1 else m_id
+                    parsed.append({"modelId": m_id, "name": m_name})
+            if parsed:
+                log_debug(f"Successfully fetched {len(parsed)} models from agy")
+                return parsed
+        else:
+            log_debug(f"agy models returned code {proc.returncode}: {proc.stderr}")
+    except Exception as e:
+        log_debug(f"Exception fetching agy models: {e}")
+    return []
+
+def refresh_models_async(agy_bin=None):
+    global cached_models
+    log_debug("Starting async refresh of models list...")
+    live_models = fetch_models_from_agy(agy_bin)
+    if live_models:
+        cached_models = live_models
+        save_cached_models(live_models)
+        log_debug(f"Async refresh complete. Updated {len(live_models)} models.")
+
+def get_available_models(agy_bin=None):
+    global cached_models
+    if cached_models:
+        return cached_models
+
+    models, ts = load_cached_models()
+    if models:
+        cached_models = models
+        if (time.time() - ts) > MODELS_CACHE_TTL:
+            threading.Thread(target=refresh_models_async, args=(agy_bin,), daemon=True).start()
+        return cached_models
+
+    cached_models = list(FALLBACK_MODELS)
+    threading.Thread(target=refresh_models_async, args=(agy_bin,), daemon=True).start()
+    return cached_models
+
+def normalize_model_id(model_id, available_models=None):
+    if not model_id:
+        return "gemini-3.8-flash-medium"
+
+    aliased = MODEL_ALIASES.get(model_id, model_id)
+    if available_models:
+        avail_ids = [m["modelId"] for m in available_models]
+        if aliased in avail_ids:
+            return aliased
+        for mid in avail_ids:
+            if aliased.startswith(mid) or mid.startswith(aliased):
+                return mid
+        if "gemini-3.8-flash-medium" in avail_ids:
+            return "gemini-3.8-flash-medium"
+        return avail_ids[0]
+    return aliased
+
 def build_agy_cmd(agy_bin, prompt_text, model=None, effort=None, conv_id=None):
+    avail = get_available_models(agy_bin)
+    normalized = normalize_model_id(model, avail) if model else None
     cmd = [
         agy_bin,
         "-p", prompt_text,
@@ -94,14 +214,15 @@ def build_agy_cmd(agy_bin, prompt_text, model=None, effort=None, conv_id=None):
     ]
     if conv_id:
         cmd.extend(["--conversation", conv_id])
-    if model:
-        cmd.extend(["--model", model])
+    if normalized:
+        cmd.extend(["--model", normalized])
     if effort:
         cmd.extend(["--effort", effort])
-    elif model and "gemini-3" in model:
-        # gemini-3系モデルは --effort が必須
+    elif normalized and ("gemini-3" in normalized and not any(normalized.endswith(x) for x in ["-high", "-medium", "-low"])):
+        # 正規化後も effort 接尾辞がない旧形式の場合のみ --effort を付与
         cmd.extend(["--effort", "medium"])
     return cmd
+
 
 def execute_agy(cmd, session_id, agy_env):
     log_debug(f"Spawning agy: {cmd}")
@@ -242,26 +363,30 @@ def execute_agy(cmd, session_id, agy_env):
     return retcode, full_output, err_msg
 
 def get_config_options():
+    models = get_available_models()
+    cur = normalize_model_id(current_model, models)
     return [
         {
             "id": "model",
             "name": "Model",
             "type": "select",
-            "currentValue": current_model,
+            "currentValue": cur,
             "options": [
                 {"value": m["modelId"], "name": m["name"]}
-                for m in MODELS_LIST
+                for m in models
             ]
         }
     ]
 
 def get_session_setup_result(session_id=None):
     sid = session_id or str(uuid.uuid4())
+    models = get_available_models()
+    cur = normalize_model_id(current_model, models)
     res = {
         "sessionId": sid,
         "models": {
-            "currentModelId": current_model,
-            "availableModels": MODELS_LIST
+            "currentModelId": cur,
+            "availableModels": models
         },
         "configOptions": get_config_options(),
         "availableCommands": [
@@ -273,6 +398,9 @@ def get_session_setup_result(session_id=None):
 def main():
     global current_model
     log_debug(f"Antigravity ACP bridge started. Args: {sys.argv}")
+    # 起動時に非同期でモデルキャッシュを確認・最新化
+    threading.Thread(target=refresh_models_async, daemon=True).start()
+
     while True:
         line = sys.stdin.readline()
         if not line:
@@ -340,7 +468,7 @@ def main():
             cfg_id = params.get("configId")
             val = params.get("value")
             if cfg_id == "model" and isinstance(val, str) and val:
-                current_model = val
+                current_model = normalize_model_id(val, get_available_models())
             send_response({
                 "jsonrpc": "2.0",
                 "id": msg_id,
@@ -352,7 +480,7 @@ def main():
             params = req.get("params", {})
             m_id = params.get("modelId")
             if isinstance(m_id, str) and m_id:
-                current_model = m_id
+                current_model = normalize_model_id(m_id, get_available_models())
             send_response({
                 "jsonrpc": "2.0",
                 "id": msg_id,
@@ -442,6 +570,21 @@ def main():
                         log_debug(f"Retrying with effort: {cmd}")
                         retcode, full_output, err_msg = execute_agy(cmd, session_id, agy_env)
 
+                    # 失敗時 (2.5): --effort がサポートされていないモデルでエラーになった場合のリトライ
+                    if retcode != 0 and not full_output and "--effort is not supported" in err_msg:
+                        log_debug(f"Retrying without effort due to: {err_msg}")
+                        cmd = [
+                            agy_bin,
+                            "-p", user_text,
+                            "--output-format", "stream-json",
+                            "--dangerously-skip-permissions",
+                            "--model", normalize_model_id(current_model, get_available_models(agy_bin))
+                        ]
+                        conv_retry = get_agy_conversation(session_id)
+                        if conv_retry:
+                            cmd.extend(["--conversation", conv_retry])
+                        retcode, full_output, err_msg = execute_agy(cmd, session_id, agy_env)
+
                     # 失敗時 (3): モデルエラーの場合はデフォルトモデルでリトライ
                     if retcode != 0 and not full_output and any(k in err_msg for k in ["invalid model selection", "not supported", "unknown model", "no model configuration"]):
                         log_debug(f"Retrying with default model due to model error: {err_msg}")
@@ -455,6 +598,7 @@ def main():
                         if conv_retry:
                             cmd.extend(["--conversation", conv_retry])
                         retcode, full_output, err_msg = execute_agy(cmd, session_id, agy_env)
+
 
                     if retcode != 0 and not full_output:
                         send_response({
