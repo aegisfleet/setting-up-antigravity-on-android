@@ -194,10 +194,11 @@ t3-stop
 を実行して一度プロセスをクリーンアップしてから、再度 `t3-start` を実行してください。
 
 ### 3. Antigravity の認証をやり直したい場合
-認証トークンを更新したい場合は、Ubuntu 内で `agy auth login` を再実行してください。
+認証トークンを更新したい場合やアカウントを切り替えたい場合は、Ubuntu 内でトークンファイルを削除して `agy` を再実行してください。
 ```bash
 t3-shell
-agy auth login
+rm -f ~/.gemini/antigravity-cli/antigravity-oauth-token
+agy
 exit
 ```
 
