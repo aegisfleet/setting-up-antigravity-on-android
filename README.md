@@ -20,9 +20,13 @@ Android 上の **Termux**（Google Play 版 / F-Droid 版）および **proot-di
 - ⚡ **自律エージェント機能（全ツール自動承認）**:
   - エージェント実行時に `--dangerously-skip-permissions` を自動適用。
   - ファイルの作成・編集、ディレクトリ探索、シェルコマンドの実行などを AI が自律的に完結。
-- 🛡 **Android ARM64 最適化ブリッジ**:
-  - Android 特有の仮想アドレス空間（39-bit VA）起因で公式 ACP サーバーバイナリが異常終了（Aborted）する問題を解消する軽量 ACP ブリッジを内包。
-  - モデル仕様の差異や reasoning effort 要求にも自動対応・フォールバック。
+- 💬 **マルチターン会話の完全永続化**:
+  - T3 Code のスレッドごとのセッション ID と Antigravity CLI の会話履歴 (`--conversation`) を自動的にマッピング・永続化 (`~/.gemini/antigravity-acp/session_map.json`)。
+  - スレッド内で会話が複数ターンに及んでも以前の文脈や指示を完全に保持。
+- 🛡 **Android ARM64 最適化ブリッジ & リアルタイムストリーミング**:
+  - Android 特有の仮想アドレス空間（39-bit VA）起因で公式 ACP サーバーバイナリが異常終了（Aborted）する問題を解消する軽量 ACP ブリッジ (`scripts/agy_acp_bridge.py`) を提供。
+  - `stream-json` 連携により、応答テキストの逐次ストリーミングに加えてツール実行状況（Bash コマンド実行等）をリアルタイム可視化。
+  - Gemini 3 系モデルでの `--effort medium` 自動付与や、モデル・セッションエラー時の自動フォールバック機構を内蔵。
 - 🛠 **Android SDK ビルド環境（オプション）**:
   - ARM64 版 `aapt2` のパッチ適用済み。端末内での Gradle による APK ビルドが可能。
 - 📱 **直感的な操作コマンド**:
@@ -147,6 +151,29 @@ cd /path/to/your-android-project
 # Gradle でデバッグ APK をビルド
 ./gradlew assembleDebug
 ```
+
+---
+
+## アーキテクチャとファイル構成
+
+```
+setting-up-antigravity-on-android/
+├── install.sh                  # Termux ホスト側エントリーポイント
+└── scripts/
+    ├── setup-ubuntu.sh         # Ubuntu PRoot 環境の初期構築
+    ├── install-antigravity.sh  # Antigravity プロバイダ構成 & ブリッジ登録
+    ├── agy_acp_bridge.py       # T3 Code ACP ↔ agy CLI Python ブリッジ (会話永続化/ストリーミング)
+    ├── t3-server-manager.sh    # T3 Code バックグラウンドサーバー管理
+    └── install-android-sdk.sh  # Android SDK (aapt2 ARM64対応) セットアップ
+```
+
+### ACP ブリッジ (`agy_acp_bridge.py`) の動作原理
+
+T3 Code は標準入力/標準出力経由の Agent Client Protocol (ACP) を用いてエージェントと通信します。本リポジトリのブリッジは以下の役割を果たします:
+
+1. **セッション永続化**: T3 Code の `sessionId` を Antigravity の `conversation_id` にマッピングし、`~/.gemini/antigravity-acp/session_map.json` に保存。2ターン目以降は `--conversation <ID>` を自動付与して過去の文脈を引き継ぎます。
+2. **リアルタイムストリーミング**: `agy` を `--output-format stream-json` で駆動し、`text_delta` による思考・文章出力や、ツール実行通知（`⚙️ Tool: <name>`）をリアルタイムに T3 Code UI へ中継します。
+3. **モデル & Effort 最適化**: Gemini 3.8 Flash 等で必要な `--effort medium` を自動指定し、未対応モデルやセッション欠落時には安全に自動リトライします。
 
 ---
 
