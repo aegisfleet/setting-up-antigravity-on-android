@@ -49,8 +49,11 @@ Android 上の **Termux**（Google Play 版 / GitHub Releases 版 / F-Droid 版�
   - **トークン消費ゼロの即答ヘルプ**: `/help`、`/ヘルプ`、または「ヘルプ」「コマンド一覧」と送信するだけで、**推論トークンを消費することなく**（0 秒即答）利用可能な全コマンド・機能ガイドをグラフィカルに表示。
 - 🛠 **Android SDK ビルド環境（オプション）**:
   - ARM64 版 `aapt2` のパッチ適用済み。端末内での Gradle による APK ビルドが可能。
+- 🤖 **OpenAI Codex CLI 連携（オプション）**:
+  - 公式 Codex CLI (`@openai/codex`) の ARM64 静的バイナリと T3 Code の `codex app-server` 連携をワンタッチ構築。
+  - ChatGPT アカウントの OAuth デバイス認証 (`codex-login`) または OpenAI API キーに対応。
 - 📱 **直感的な操作コマンド**:
-  - `t3-start`、`t3-stop`、`t3-status`、`t3-quota`、`t3-shell` などの Termux コマンドを自動生成。
+  - `t3-start`、`t3-stop`、`t3-status`、`t3-quota`、`t3-shell`、`t3-install-codex`、`codex-login` などの Termux コマンドを自動生成。
 
 ---
 
@@ -103,9 +106,12 @@ curl -fsSL "https://raw.githubusercontent.com/aegisfleet/setting-up-antigravity-
 ```
 
 > **対話プロンプトについて**:
-> スクリプト実行中に「`Android SDK (APKビルド環境) もセットアップしますか？ [y/N]:`」と尋ねられます。
-> Android アプリの端末内ビルドも行いたい場合は `y`、T3 Code とエージェントのみで十分な場合は `n`（Enter）を押してください。
-> （環境変数 `INSTALL_ANDROID_SDK=1` を指定して非対話で実行することも可能です）
+> スクリプト実行中に以下の追加オプションをセットアップするか尋ねられます。
+> 1. `Android SDK (APKビルド環境) もセットアップしますか？ [y/N]:`
+> 2. `OpenAI Codex CLI (Codex プロバイダ連携) もセットアップしますか？ [y/N]:`
+> 
+> ここでスキップ（Enter）した場合でも、後からいつでも `t3-install-sdk` や `t3-install-codex` コマンドで個別にインストール可能です。
+> （環境変数 `INSTALL_ANDROID_SDK=1` や `INSTALL_CODEX=1` を指定して非対話実行も可能）
 
 ---
 
@@ -179,6 +185,47 @@ t3-start
 | `t3-status` | サーバーの稼働状態と直近のログを確認 |
 | `t3-quota` | Antigravity の利用状況（残りクォータ / レート制限）を確認（`使用量`, `使用状況` も利用可） |
 | `t3-shell` | Ubuntu PRoot 環境の bash シェルに対話的にログイン |
+| `t3-install-codex` | OpenAI Codex CLI をセットアップ（後からいつでも追加可能） |
+| `codex-login` | Codex のデバイスコード認証（ChatGPTログイン）を Termux から起動 |
+| `t3-install-sdk` | Android SDK (APKビルド環境) をセットアップ（後からいつでも追加可能） |
+
+---
+
+## オプション: OpenAI Codex CLI のセットアップ
+
+OpenAI の公式コーディングエージェント **Codex CLI** を導入し、T3 Code から直接呼び出せるようにします。
+
+### インストール方法（いつでも実行可能）
+
+Termux または Ubuntu 内からワンコマンドでセットアップできます。
+
+- **Termux から実行する場合**:
+  ```bash
+  t3-install-codex
+  ```
+- **Ubuntu PRoot 内から実行する場合**:
+  ```bash
+  bash /root/setting-up-antigravity-on-android/scripts/install-codex.sh
+  ```
+
+### アカウント認証（ログイン）
+
+以下のいずれかの方法で認証します。
+
+1. **ChatGPT アカウント（OAuth デバイスコード認証・推奨）**:
+   Termux から `codex-login` を実行するか、Ubuntu 内で `codex login --device-auth` を実行します。
+   ```bash
+   codex-login
+   ```
+   表示された 8 桁のコードと URL（`https://chatgpt.com/auth/device`）をスマホのブラウザで開いて認証を承認します。
+2. **OpenAI API キー**:
+   ```bash
+   t3-shell
+   echo "sk-your-api-key" | codex login --with-api-key
+   exit
+   ```
+
+認証完了後、`t3-stop && t3-start` でサーバーを再起動すると、T3 Code 画面のモデル選択に Codex モデル群が表示されます。
 
 ---
 
@@ -256,6 +303,7 @@ setting-up-antigravity-on-android/
     ├── agy_acp_bridge.py       # T3 Code ACP ↔ agy CLI Python ブリッジ (会話永続化/ストリーミング/クォータ管理)
     ├── check_quota.py          # Antigravity 利用状況・レート制限チェッカー
     ├── t3-server-manager.sh    # T3 Code バックグラウンドサーバー管理
+    ├── install-codex.sh        # OpenAI Codex CLI セットアップ & T3 Code 有効化
     └── install-android-sdk.sh  # Android SDK (aapt2 ARM64対応) セットアップ
 ```
 

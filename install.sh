@@ -29,7 +29,7 @@ if [ "$ARCH" != "aarch64" ] && [ "$ARCH" != "arm64" ]; then
     echo -e "${YELLOW}[警告] アーキテクチャが $ARCH です。本環境は aarch64 (ARM64) を推奨しています。${NC}"
 fi
 
-# 2. Options: Android SDK installation flag
+# 2. Options: Optional component flags (Android SDK, Codex)
 INSTALL_ANDROID_SDK="${INSTALL_ANDROID_SDK:-0}"
 if [ "$INSTALL_ANDROID_SDK" -eq 0 ] && [ -t 0 ]; then
     echo -e "${YELLOW}Android SDK (APKビルド環境) もセットアップしますか？ [y/N]: ${NC}"
@@ -40,6 +40,20 @@ if [ "$INSTALL_ANDROID_SDK" -eq 0 ] && [ -t 0 ]; then
             ;;
         *)
             INSTALL_ANDROID_SDK=0
+            ;;
+    esac
+fi
+
+INSTALL_CODEX="${INSTALL_CODEX:-0}"
+if [ "$INSTALL_CODEX" -eq 0 ] && [ -t 0 ]; then
+    echo -e "${YELLOW}OpenAI Codex CLI (Codex プロバイダ連携) もセットアップしますか？ [y/N]: ${NC}"
+    read -r ans || ans="n"
+    case "$ans" in
+        [yY][eE][sS]|[yY])
+            INSTALL_CODEX=1
+            ;;
+        *)
+            INSTALL_CODEX=0
             ;;
     esac
 fi
@@ -91,6 +105,7 @@ proot-distro login ubuntu -- /bin/bash -c "
     git clone https://github.com/aegisfleet/setting-up-antigravity-on-android.git /root/setting-up-antigravity-on-android
 
     export INSTALL_ANDROID_SDK=\"$INSTALL_ANDROID_SDK\"
+    export INSTALL_CODEX=\"$INSTALL_CODEX\"
     bash /root/setting-up-antigravity-on-android/scripts/setup-ubuntu.sh
 " < /dev/null
 
@@ -208,17 +223,41 @@ chmod +x "${PREFIX_BIN}/t3-quota"
 ln -sf "${PREFIX_BIN}/t3-quota" "${PREFIX_BIN}/使用量"
 ln -sf "${PREFIX_BIN}/t3-quota" "${PREFIX_BIN}/使用状況"
 
+# t3-install-codex
+cat << 'EOF' > "${PREFIX_BIN}/t3-install-codex"
+#!/data/data/com.termux/files/usr/bin/bash
+proot-distro login ubuntu -- bash /root/setting-up-antigravity-on-android/scripts/install-codex.sh
+EOF
+chmod +x "${PREFIX_BIN}/t3-install-codex"
+
+# codex-login (Termux から直接 Codex のデバイスコード認証を実行)
+cat << 'EOF' > "${PREFIX_BIN}/codex-login"
+#!/data/data/com.termux/files/usr/bin/bash
+proot-distro login ubuntu -- codex login --device-auth
+EOF
+chmod +x "${PREFIX_BIN}/codex-login"
+
+# t3-install-sdk
+cat << 'EOF' > "${PREFIX_BIN}/t3-install-sdk"
+#!/data/data/com.termux/files/usr/bin/bash
+proot-distro login ubuntu -- bash /root/setting-up-antigravity-on-android/scripts/install-android-sdk.sh
+EOF
+chmod +x "${PREFIX_BIN}/t3-install-sdk"
+
 echo ""
 echo -e "${GREEN}================================================================${NC}"
 echo -e "${GREEN}  セットアップが完了しました！${NC}"
 echo -e "${GREEN}================================================================${NC}"
 echo ""
 echo -e "利用可能なコマンド:"
-echo -e "  ${CYAN}t3-start${NC}   : T3 Code サーバーを起動 (http://127.0.0.1:3773)"
-echo -e "  ${CYAN}t3-stop${NC}    : T3 Code サーバーを停止"
-echo -e "  ${CYAN}t3-status${NC}  : サーバーの稼働状態とログを確認"
-echo -e "  ${CYAN}t3-quota${NC}   : Antigravity の利用状況・残りクォータを確認"
-echo -e "  ${CYAN}t3-shell${NC}   : Ubuntu PRoot 環境のシェルにログイン"
+echo -e "  ${CYAN}t3-start${NC}         : T3 Code サーバーを起動 (http://127.0.0.1:3773)"
+echo -e "  ${CYAN}t3-stop${NC}          : T3 Code サーバーを停止"
+echo -e "  ${CYAN}t3-status${NC}        : サーバーの稼働状態とログを確認"
+echo -e "  ${CYAN}t3-quota${NC}         : Antigravity の利用状況・残りクォータを確認"
+echo -e "  ${CYAN}t3-shell${NC}         : Ubuntu PRoot 環境のシェルにログイン"
+echo -e "  ${CYAN}t3-install-codex${NC} : OpenAI Codex CLI のセットアップ（後からいつでも実行可能）"
+echo -e "  ${CYAN}codex-login${NC}      : Codex のデバイスコード認証（ChatGPTログイン）を起動"
+echo -e "  ${CYAN}t3-install-sdk${NC}   : Android SDK (APKビルド環境) のセットアップ（後からいつでも実行可能）"
 echo ""
 echo -e "${YELLOW}💡 【初回のみ】Antigravity の Google アカウント認証を行ってください:${NC}"
 echo -e "   1. ${CYAN}t3-shell${NC} を実行して Ubuntu シェルに入ります。"

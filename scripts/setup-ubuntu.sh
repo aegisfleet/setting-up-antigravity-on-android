@@ -60,6 +60,13 @@ if [ "$INSTALL_ANDROID_SDK" -eq 1 ]; then
     bash "${SCRIPT_DIR}/install-android-sdk.sh"
 fi
 
+# 6. Optional: OpenAI Codex CLI
+INSTALL_CODEX="${INSTALL_CODEX:-0}"
+if [ "$INSTALL_CODEX" -eq 1 ]; then
+    echo "[Ubuntu] オプション: OpenAI Codex CLI をセットアップ中..."
+    bash "${SCRIPT_DIR}/install-codex.sh"
+fi
+
 # Ensure paths in /root/.bashrc
 if ! grep -q '/usr/local/bin' /root/.bashrc 2>/dev/null; then
     echo 'export PATH="/usr/local/bin:$PATH"' >> /root/.bashrc
