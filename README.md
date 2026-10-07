@@ -41,9 +41,9 @@ Android 上の **Termux**（Google Play 版 / GitHub Releases 版 / F-Droid 版�
   - `stream-json` 連携により、応答テキストの逐次ストリーミングに加えてツール実行状況（Bash コマンド実行等）をリアルタイム可視化。
   - Gemini 3 系モデルでの `--effort medium` 自動付与や、モデル・セッションエラー時の自動フォールバック機構を内蔵。
 - 📊 **利用状況 (Quota / レート制限) のリアルタイム把握**:
-  - **T3 Code チャット画面**: `/quota` や `/usage` に加え、**「使用量」「使用状況」「/使用量」「残量」などの日本語**で送信するだけでも、**推論トークンを消費することなく**（0 トークンで）即座に最新の残りパーセント（Gemini / Claude 各グループの 5時間枠・週間枠、全回復予定時刻）をグラフィカルに表示。
+  - **T3 Code チャット画面**: `/quota` や `/usage` に加え、**「使用量」「使用状況」「/使用量」「残量」などの日本語**で送信するだけでも、**推論トークンを消費することなく**（0 トークンで）即座に最新の残りパーセント（Gemini / Claude 各グループの 5時間枠・週間枠、全回復予定時刻）をグラフィカルに表示。※ OpenAI Codex 導入時は Codex のレート制限・残り枠も自動で併記されます。
   - **モデル選択メニュー**: ドロップダウンのモデル名横に現在の残り枠（例: `Gemini 3.8 Flash (High) [残72%]`）を動的表示。切り替え前に残量を一目で確認可能。
-  - **ターミナル連携**: Termux / Ubuntu 上で `t3-quota`（または日本語コマンド `使用量` / `使用状況`）を実行するだけでも即座に確認可能。
+  - **ターミナル連携**: Termux / Ubuntu 上で `t3-quota`（または日本語コマンド `使用量` / `使用状況`）を実行するだけでも即座に確認可能（Codex がインストールされていれば OpenAI Codex の利用状況も自動検出して一括表示）。
 - 🎯 **スラッシュコマンド補完 & トークン消費ゼロのヘルプガイド**:
   - **チャット欄での `/` 入力サジェスト**: 入力欄で `/` を入力するだけで、利用可能なコマンド群（`/boost`, `/plan`, `/goal`, `/teamwork-preview`, `/grill-me`, `/quota`, `/help` 等）が日本語の説明付きでポップアップ表示。
   - **トークン消費ゼロの即答ヘルプ**: `/help`、`/ヘルプ`、または「ヘルプ」「コマンド一覧」と送信するだけで、**推論トークンを消費することなく**（0 秒即答）利用可能な全コマンド・機能ガイドをグラフィカルに表示。
@@ -341,7 +341,7 @@ setting-up-antigravity-on-android/
     ├── setup-ubuntu.sh         # Ubuntu PRoot 環境の初期構築
     ├── install-antigravity.sh  # Antigravity プロバイダ構成 & ブリッジ登録
     ├── agy_acp_bridge.py       # T3 Code ACP ↔ agy CLI Python ブリッジ (会話永続化/ストリーミング/クォータ管理)
-    ├── check_quota.py          # Antigravity 利用状況・レート制限チェッカー
+    ├── check_quota.py          # Antigravity & Codex 利用状況・レート制限チェッカー
     ├── t3-server-manager.sh    # T3 Code バックグラウンドサーバー管理
     ├── install-codex.sh        # OpenAI Codex CLI セットアップ & T3 Code 有効化
     ├── install-gh.sh           # GitHub CLI (gh) セットアップ & Termux 連携

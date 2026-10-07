@@ -17,6 +17,8 @@ import urllib.request
 import urllib.error
 from datetime import datetime, timezone
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 LOG_FILE = "/tmp/agy_acp.log"
 SESSION_MAP_FILE = "/root/.gemini/antigravity-acp/session_map.json"
 MODELS_CACHE_FILE = "/root/.gemini/antigravity-acp/models_cache.json"
@@ -25,6 +27,8 @@ QUOTA_CACHE_FILE = "/root/.gemini/antigravity-acp/quota_cache.json"
 QUOTA_CACHE_TTL = 90  # 90秒
 cached_quota_summary = None
 cached_quota_time = 0
+cached_codex_summary = None
+cached_codex_time = 0
 
 FALLBACK_MODELS = [
     {"modelId": "gemini-3.8-flash-medium", "name": "Gemini 3.8 Flash (Medium)"},
@@ -165,72 +169,36 @@ def get_quota_summary(force_refresh=False):
 
     return fetch_quota_summary()
 
-def make_progress_bar(fraction, width=15):
-    filled = int(round(fraction * width))
-    filled = max(0, min(width, filled))
-    return "█" * filled + "░" * (width - filled)
-
-def parse_relative_time(iso_str):
-    if not iso_str:
-        return ""
+def fetch_codex_summary():
+    global cached_codex_summary, cached_codex_time
     try:
-        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
-        now = datetime.now(timezone.utc)
-        diff = dt - now
-        total_sec = max(0, int(diff.total_seconds()))
-        hours = total_sec // 3600
-        mins = (total_sec % 3600) // 60
-        if hours >= 24:
-            days = hours // 24
-            rem_hours = hours % 24
-            return f"{days}日{rem_hours}時間後"
-        elif hours > 0:
-            return f"{hours}時間{mins}分後"
-        else:
-            return f"{mins}分後"
-    except Exception:
-        return iso_str
+        from check_quota import get_codex_quota_summary
+        data = get_codex_quota_summary()
+    except Exception as e:
+        log_debug(f"Error fetching codex summary: {e}")
+        data = None
+    cached_codex_summary = data
+    cached_codex_time = time.time()
+    return data
 
-def format_quota_markdown(data):
-    if not data:
-        return "⚠️ **クォータ情報の取得に失敗しました**: データが空です。"
-    if "error" in data:
-        err = data["error"]
-        return f"⚠️ **クォータ情報の取得に失敗しました**: {err}\n\nTermux で `agy` を起動して Google アカウント認証が完了しているかご確認ください。"
+def get_codex_summary(force_refresh=False):
+    global cached_codex_summary, cached_codex_time
+    now = time.time()
+    if not force_refresh and cached_codex_summary and (now - cached_codex_time) < QUOTA_CACHE_TTL:
+        return cached_codex_summary
+    return fetch_codex_summary()
 
-    groups = data.get("groups", [])
-    if not groups:
+def format_quota_markdown(data, codex_data=None):
+    try:
+        from check_quota import format_quota_markdown as _fmt_all
+        return _fmt_all(data, codex_data)
+    except Exception as e:
+        log_debug(f"Error formatting quota via check_quota: {e}")
+        if not data:
+            return "⚠️ **クォータ情報の取得に失敗しました**: データが空です。"
+        if "error" in data:
+            return f"⚠️ **クォータ情報の取得に失敗しました**: {data['error']}"
         return "利用状況データが見つかりませんでした。"
-
-    lines = ["### 📊 Google Antigravity 利用状況 (Quota & Limits)", ""]
-    for g in groups:
-        name = g.get("displayName", "Group")
-        desc = g.get("description", "")
-        lines.append(f"#### 🔹 **{name}**")
-        if desc:
-            lines.append(f"*{desc}*")
-        lines.append("")
-        for b in g.get("buckets", []):
-            dname = b.get("displayName", "Limit")
-            frac = b.get("remainingFraction", 1.0)
-            pct = frac * 100.0
-            bar = make_progress_bar(frac)
-            rel_time = parse_relative_time(b.get("resetTime", ""))
-            reset_info = f" (🔄 全回復: 約 {rel_time})" if rel_time else ""
-            
-            if pct > 50:
-                icon = "🟢"
-            elif pct > 20:
-                icon = "🟡"
-            else:
-                icon = "🔴"
-
-            lines.append(f"- {icon} **{dname}**: `[{bar}]` **{pct:.1f}% 残り**{reset_info}")
-        lines.append("")
-
-    lines.append("---")
-    lines.append("> 💡 **ヒント**: モデルグループごとに「5時間枠（短期集中用）」と「週間枠（全体契約用）」が共有されています。残り枠が少なくなった場合は別グループのモデル（Gemini ⇔ Claude）に切り替えることで作業を継続できます。")
-    return "\n".join(lines)
 
 def get_quota_short_map():
     data = get_quota_summary()
@@ -859,7 +827,8 @@ def main():
                 if is_quota_intent(user_text):
                     log_debug(f"Directly replying to quota intent for user text: {user_text[:60]}")
                     quota_data = get_quota_summary(force_refresh=True)
-                    quota_text = format_quota_markdown(quota_data)
+                    codex_data = get_codex_summary(force_refresh=True)
+                    quota_text = format_quota_markdown(quota_data, codex_data)
                     send_response({
                         "jsonrpc": "2.0",
                         "method": "session/update",
