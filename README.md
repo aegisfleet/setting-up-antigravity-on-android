@@ -174,6 +174,11 @@ t3-start
 
 <p align="center">
   <img src="assets/quota_screenshot.png" alt="T3 Code での利用状況（使用状況）確認画面" width="340" />
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="assets/model_quota_screenshot.png" alt="T3 Code モデル選択メニューでのリアルタイム残量表示" width="340" />
+</p>
+<p align="center">
+  <sub><b>左</b>: チャットでの利用状況確認（推論トークン消費ゼロ） &nbsp;／&nbsp; <b>右</b>: モデル選択メニューでのリアルタイム残量表示（Codex & Antigravity）</sub>
 </p>
 
 ---
@@ -229,7 +234,7 @@ Termux または Ubuntu 内からワンコマンドでセットアップでき�
    echo "sk-your-api-key" | codex login --with-api-key
    ```
 
-認証完了後、`t3-stop && t3-start` でサーバーを再起動すると、T3 Code 画面のモデル選択に Codex モデル群が表示されます。
+認証完了後、`t3-stop && t3-start` でサーバーを再起動すると、T3 Code 画面のモデル選択に Codex モデル群が表示され、モデル名の横に現在の残量（`[残99%]` 等）がリアルタイムに表示されます。
 
 ---
 
