@@ -51,9 +51,9 @@ Android 上の **Termux**（Google Play 版 / GitHub Releases 版 / F-Droid 版�
   - ARM64 版 `aapt2` のパッチ適用済み。端末内での Gradle による APK ビルドが可能。
 - 🤖 **OpenAI Codex CLI 連携（オプション）**:
   - 公式 Codex CLI (`@openai/codex`) の ARM64 静的バイナリと T3 Code の `codex app-server` 連携をワンタッチ構築。
-  - ChatGPT アカウントの OAuth デバイス認証 (`codex-login`) または OpenAI API キーに対応。
+  - ChatGPT アカウントの OAuth デバイス認証 (`codex login`) または OpenAI API キーに対応。
 - 📱 **直感的な操作コマンド**:
-  - `t3-start`、`t3-stop`、`t3-status`、`t3-quota`、`t3-shell`、`t3-install-codex`、`codex-login` などの Termux コマンドを自動生成。
+  - `t3-start`、`t3-stop`、`t3-status`、`t3-quota`、`t3-shell`、`codex`、`t3-install-codex` などの Termux コマンドを自動生成。
 
 ---
 
@@ -185,8 +185,8 @@ t3-start
 | `t3-status` | サーバーの稼働状態と直近のログを確認 |
 | `t3-quota` | Antigravity の利用状況（残りクォータ / レート制限）を確認（`使用量`, `使用状況` も利用可） |
 | `t3-shell` | Ubuntu PRoot 環境の bash シェルに対話的にログイン |
+| `codex` | OpenAI Codex CLI（Termux から直接 `codex login` 等を実行可能） |
 | `t3-install-codex` | OpenAI Codex CLI をセットアップ（後からいつでも追加可能） |
-| `codex-login` | Codex のデバイスコード認証（ChatGPTログイン）を Termux から起動 |
 | `t3-install-sdk` | Android SDK (APKビルド環境) をセットアップ（後からいつでも追加可能） |
 
 ---
@@ -213,16 +213,14 @@ Termux または Ubuntu 内からワンコマンドでセットアップでき�
 以下のいずれかの方法で認証します。
 
 1. **ChatGPT アカウント（OAuth デバイスコード認証・推奨）**:
-   Termux から `codex-login` を実行するか、Ubuntu 内で `codex login --device-auth` を実行します。
+   Termux または Ubuntu シェルで `codex login --device-auth`（または `codex login`）を実行します。
    ```bash
-   codex-login
+   codex login --device-auth
    ```
    表示された 8 桁のコードと URL（`https://chatgpt.com/auth/device`）をスマホのブラウザで開いて認証を承認します。
 2. **OpenAI API キー**:
    ```bash
-   t3-shell
    echo "sk-your-api-key" | codex login --with-api-key
-   exit
    ```
 
 認証完了後、`t3-stop && t3-start` でサーバーを再起動すると、T3 Code 画面のモデル選択に Codex モデル群が表示されます。

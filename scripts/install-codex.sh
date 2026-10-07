@@ -137,12 +137,12 @@ proot-distro login ubuntu -- bash /root/setting-up-antigravity-on-android/script
 EOF
     chmod +x "${PREFIX_BIN}/t3-install-codex"
 
-    # codex-login (Termux から直接 OAuth 認証を起動可能にする)
-    cat << 'EOF' > "${PREFIX_BIN}/codex-login"
+    # codex (Termux から直接 codex コマンドを実行可能にする)
+    cat << 'EOF' > "${PREFIX_BIN}/codex"
 #!/data/data/com.termux/files/usr/bin/bash
-proot-distro login ubuntu -- codex login --device-auth
+proot-distro login ubuntu -- codex "$@"
 EOF
-    chmod +x "${PREFIX_BIN}/codex-login"
+    chmod +x "${PREFIX_BIN}/codex"
 fi
 
 echo ""
@@ -154,7 +154,7 @@ echo "💡 【次のステップ: アカウント認証】"
 echo "   以下のいずれかの方法で認証を行ってください:"
 echo ""
 echo "   1. ChatGPT アカウントで利用 (推奨・デバイスコード認証):"
-echo "      Termux 上で 'codex-login' を実行するか、Ubuntu シェルで以下を実行:"
+echo "      Termux または Ubuntu シェルで以下を実行:"
 echo "      $ codex login --device-auth"
 echo "      表示された 8 桁のコードと URL をスマートフォンのブラウザで開いて認証します。"
 echo ""

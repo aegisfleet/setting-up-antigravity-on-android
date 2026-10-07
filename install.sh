@@ -230,12 +230,12 @@ proot-distro login ubuntu -- bash /root/setting-up-antigravity-on-android/script
 EOF
 chmod +x "${PREFIX_BIN}/t3-install-codex"
 
-# codex-login (Termux から直接 Codex のデバイスコード認証を実行)
-cat << 'EOF' > "${PREFIX_BIN}/codex-login"
+# codex (Termux から直接 codex コマンドを実行)
+cat << 'EOF' > "${PREFIX_BIN}/codex"
 #!/data/data/com.termux/files/usr/bin/bash
-proot-distro login ubuntu -- codex login --device-auth
+proot-distro login ubuntu -- codex "$@"
 EOF
-chmod +x "${PREFIX_BIN}/codex-login"
+chmod +x "${PREFIX_BIN}/codex"
 
 # t3-install-sdk
 cat << 'EOF' > "${PREFIX_BIN}/t3-install-sdk"
@@ -255,8 +255,8 @@ echo -e "  ${CYAN}t3-stop${NC}          : T3 Code サーバーを停止"
 echo -e "  ${CYAN}t3-status${NC}        : サーバーの稼働状態とログを確認"
 echo -e "  ${CYAN}t3-quota${NC}         : Antigravity の利用状況・残りクォータを確認"
 echo -e "  ${CYAN}t3-shell${NC}         : Ubuntu PRoot 環境のシェルにログイン"
+echo -e "  ${CYAN}codex${NC}            : OpenAI Codex CLI（'codex login' などを Termux から直接実行可能）"
 echo -e "  ${CYAN}t3-install-codex${NC} : OpenAI Codex CLI のセットアップ（後からいつでも実行可能）"
-echo -e "  ${CYAN}codex-login${NC}      : Codex のデバイスコード認証（ChatGPTログイン）を起動"
 echo -e "  ${CYAN}t3-install-sdk${NC}   : Android SDK (APKビルド環境) のセットアップ（後からいつでも実行可能）"
 echo ""
 echo -e "${YELLOW}💡 【初回のみ】Antigravity の Google アカウント認証を行ってください:${NC}"
