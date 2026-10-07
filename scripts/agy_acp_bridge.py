@@ -40,9 +40,19 @@ FALLBACK_MODELS = [
     {"modelId": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6 (Thinking)"},
     {"modelId": "claude-opus-4-6-thinking", "name": "Claude Opus 4.6 (Thinking)"},
     {"modelId": "gpt-oss-120b-medium", "name": "GPT-OSS 120B (Medium)"},
+    {"modelId": "embeddinggemma-2", "name": "EmbeddingGemma 2 [ローカル / 意味検索]"},
 ]
 
+EMBEDDING_MODEL_ENTRY = {
+    "modelId": "embeddinggemma-2",
+    "name": "EmbeddingGemma 2 [ローカル / 意味検索]"
+}
+
 MODEL_ALIASES = {
+    "embeddinggemma": "embeddinggemma-2",
+    "embeddinggemma2": "embeddinggemma-2",
+    "embedding-gemma": "embeddinggemma-2",
+    "embedding-gemma-2": "embeddinggemma-2",
     "gemini-3.8-flash": "gemini-3.8-flash-medium",
     "gemini-3.7-flash": "gemini-3.7-flash-medium",
     "gemini-3.6-flash": "gemini-3.6-flash-medium",
@@ -54,6 +64,7 @@ MODEL_ALIASES = {
 }
 
 current_model = "gemini-3.8-flash-medium"
+session_models = {}
 cached_models = []
 
 def log_debug(msg):
@@ -218,6 +229,8 @@ def get_quota_short_map():
 
 def format_model_label_with_quota(model_id, base_name, qmap):
     mid_lower = model_id.lower()
+    if "embeddinggemma" in mid_lower:
+        return "EmbeddingGemma 2 [ローカル / 意味検索]"
     tag = None
     if "gemini" in mid_lower and "gemini" in qmap:
         tag = qmap["gemini"]
@@ -258,6 +271,7 @@ HELP_MARKDOWN = """### 📖 Antigravity & T3 Code コマンド・機能ガイド
 | **`/teamwork-preview`** | 複数の自律エージェントが協調してチームとして大規模プロジェクトを分担・推進するプレビューモードです。 |
 | **`/grill-me <テーマ>`** | 設計方針や要件を明確にするため、AI側からユーザーへ対話形式で質問・インタビューを行って仕様を詰めます。 |
 | **`/quota`** / **`/使用量`** | Antigravity の契約プランに応じた残りリクエスト枠（5時間枠・週間枠、全回復予定時刻）をトークン消費ゼロで即座に表示します。 |
+| **`/search <クエリ>`** | Google EmbeddingGemma 2 でプロジェクト内のコードや文書をセマンティック検索（意味検索）します。トークン消費ゼロで即答します。 |
 | **`/browser <指示>`** | Webブラウジングやドキュメント検索、Webアプリの調査を重視して作業を行います。 |
 | **`/learn`** | 解決した環境設定や指示内容を学習し、今後のセッションでも永続的に活用します。 |
 | **`/compact`** | これまでの会話履歴を要約・圧縮し、コンテキストトークンを節約します。 |
@@ -266,11 +280,52 @@ HELP_MARKDOWN = """### 📖 Antigravity & T3 Code コマンド・機能ガイド
 💡 **便利な使い方**:
 - チャット入力欄で **`/`（半角スラッシュ）** を入力すると、上記のコマンド一覧が日本語説明付きでサジェスト表示されます。
 - 「使用量」「残量」「ヘルプ」「コマンド」などのキーワードは、スラッシュなしの通常メッセージとして送信しても即座に実行されます。
+- **`/search <自然言語>`** で EmbeddingGemma 2 によるローカル意味検索を即時実行できます（例: `/search 認証ロジック`）。
 - サブエージェントによる並行調査を行いたい場合は、「*research サブエージェントを使って○○を調査して*」のように指示してください。
 """
 
 def format_help_markdown():
     return HELP_MARKDOWN
+
+def is_search_intent(text):
+    clean = re.sub(r'<[^>]+>.*?</[^>]+>', '', text, flags=re.DOTALL)
+    clean = re.sub(r'<[^>]+>', '', clean).strip()
+    if clean.lower() in ('/search', '/検索', '/意味検索', '/embed'):
+        return ""
+    patterns = [
+        r'^/(?:search|検索|意味検索|embed|embedding)\s+(.+)$',
+        r'^(?:意味検索|コード検索|セマンティック検索)[:：]\s*(.+)$',
+    ]
+    for p in patterns:
+        m = re.match(p, clean, re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
+    return None
+
+def execute_semantic_search_markdown(query):
+    if not query:
+        return "### 🔍 Google EmbeddingGemma 2 意味検索\n\n**使い方**: `/search <検索したい自然言語クエリ>`\n\n例:\n- `/search ACP bridge implementation`\n- `/search ユーザー認証の仕組み`\n- `/search エラーハンドリング`\n"
+
+    search_bin = "/opt/embeddinggemma/embedding_service.py"
+    if not os.path.exists(search_bin):
+        return f"### 🔍 EmbeddingGemma 2 未セットアップ\n\nEmbeddingGemma 2 が未セットアップです。Termux で `t3-install-embedding` を実行してください。"
+
+    try:
+        # Run search with timeout
+        cmd = [search_bin, query, "-k", "5"]
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            stdout, stderr = p.communicate(timeout=25)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            return "### 🔍 検索タイムアウト\n\n検索処理がタイムアウトしました。プロジェクト内のファイル数が多い可能性があります。"
+
+        if p.returncode != 0:
+            return f"### 🔍 検索エラー\n\n```\n{stderr or stdout}\n```"
+
+        return f"### 🔍 EmbeddingGemma 2 意味検索結果\n\n**クエリ**: `{query}`\n\n```\n{stdout.strip()}\n```\n\n> 💡 *Google EmbeddingGemma 2 (740M) によるオンデバイス推論結果です（推論トークン消費: 0）*"
+    except Exception as e:
+        return f"### 🔍 検索実行エラー\n\nエラー詳細: {e}"
 
 def is_help_intent(text):
     clean = re.sub(r'<[^>]+>.*?</[^>]+>', '', text, flags=re.DOTALL)
@@ -359,25 +414,37 @@ def refresh_models_async(agy_bin=None):
 
 def get_available_models(agy_bin=None):
     global cached_models
+    res = []
     if cached_models:
-        return cached_models
-
-    models, ts = load_cached_models()
-    if models:
-        cached_models = models
-        if (time.time() - ts) > MODELS_CACHE_TTL:
+        res = list(cached_models)
+    else:
+        models, ts = load_cached_models()
+        if models:
+            cached_models = models
+            if (time.time() - ts) > MODELS_CACHE_TTL:
+                threading.Thread(target=refresh_models_async, args=(agy_bin,), daemon=True).start()
+            res = list(cached_models)
+        else:
+            cached_models = list(FALLBACK_MODELS)
             threading.Thread(target=refresh_models_async, args=(agy_bin,), daemon=True).start()
-        return cached_models
+            res = list(cached_models)
 
-    cached_models = list(FALLBACK_MODELS)
-    threading.Thread(target=refresh_models_async, args=(agy_bin,), daemon=True).start()
-    return cached_models
+    # EmbeddingGemma 2 のエントリを常時追加
+    if not any(m.get("modelId") == "embeddinggemma-2" for m in res):
+        res.append(EMBEDDING_MODEL_ENTRY)
+    return res
 
 def normalize_model_id(model_id, available_models=None):
     if not model_id:
         return "gemini-3.8-flash-medium"
 
+    if model_id in ("embeddinggemma-2", "embeddinggemma", "embedding-gemma-2"):
+        return "embeddinggemma-2"
+
     aliased = MODEL_ALIASES.get(model_id, model_id)
+    if aliased == "embeddinggemma-2":
+        return "embeddinggemma-2"
+
     if available_models:
         avail_ids = [m["modelId"] for m in available_models]
         if aliased in avail_ids:
@@ -633,6 +700,8 @@ def get_session_setup_result(session_id=None):
             {"name": "ヘルプ", "description": "利用可能なコマンドと機能ガイドを表示"},
             {"name": "quota", "description": "Antigravity の利用状況・残りクォータを確認"},
             {"name": "使用量", "description": "利用状況・残り枠の確認 (Quota)"},
+            {"name": "search", "description": "EmbeddingGemma 2 でコード・文書を意味検索 (/search <クエリ>)"},
+            {"name": "意味検索", "description": "EmbeddingGemma 2 によるローカルセマンティック検索"},
             {"name": "boost", "description": "深い推論・戦略的思考・多角的検証を適用して実行"},
             {"name": "plan", "description": "実装前に詳細なステップバイステップ実行計画を立案"},
             {"name": "goal", "description": "ゴール達成まで粘り強く自律的に調査・試行錯誤し完結"},
@@ -717,8 +786,11 @@ def main():
             params = req.get("params", {})
             cfg_id = params.get("configId")
             val = params.get("value")
+            sid = params.get("sessionId")
             if cfg_id == "model" and isinstance(val, str) and val:
                 current_model = normalize_model_id(val, get_available_models())
+                if sid:
+                    session_models[sid] = current_model
             send_response({
                 "jsonrpc": "2.0",
                 "id": msg_id,
@@ -729,8 +801,11 @@ def main():
         elif method == "session/set_model":
             params = req.get("params", {})
             m_id = params.get("modelId")
+            sid = params.get("sessionId")
             if isinstance(m_id, str) and m_id:
                 current_model = normalize_model_id(m_id, get_available_models())
+                if sid:
+                    session_models[sid] = current_model
             send_response({
                 "jsonrpc": "2.0",
                 "id": msg_id,
@@ -796,6 +871,77 @@ def main():
                     }
                 })
             else:
+                active_model = session_models.get(session_id, current_model)
+                if active_model == "embeddinggemma-2":
+                    clean_text = re.sub(r'<[^>]+>.*?</[^>]+>', '', user_text, flags=re.DOTALL)
+                    clean_text = re.sub(r'<[^>]+>', '', clean_text).strip()
+                    clean_text = re.sub(r'^/(?:search|検索|意味検索|embed)\s*', '', clean_text).strip()
+                    log_debug(f"Directly replying as EmbeddingGemma 2 model for text: {clean_text[:60]}")
+                    if not clean_text or clean_text.lower() in ('help', 'ヘルプ', '使い方'):
+                        resp_text = (
+                            "### 🔍 Google EmbeddingGemma 2 ローカル意味検索モード\n\n"
+                            "このセッションでは **EmbeddingGemma 2** が選択されています。\n"
+                            "メッセージを入力すると、プロジェクト内のコードやドキュメントをベクトル意味検索して該当箇所を返答します。\n\n"
+                            "**検索の例**:\n"
+                            "- `認証トークンのリフレッシュ処理`\n"
+                            "- `ACP bridge の実装`\n"
+                            "- `クォータ残量計算`\n"
+                            "- `エラーハンドリング`\n"
+                        )
+                    else:
+                        resp_text = execute_semantic_search_markdown(clean_text)
+
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "method": "session/update",
+                        "params": {
+                            "sessionId": session_id,
+                            "update": {
+                                "sessionUpdate": "agent_message_chunk",
+                                "content": {
+                                    "type": "text",
+                                    "text": resp_text
+                                }
+                            }
+                        }
+                    })
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "stopReason": "end_turn"
+                        }
+                    })
+                    continue
+
+                # EmbeddingGemma 2 意味検索リクエストの検知（/search, /意味検索など）
+                search_query = is_search_intent(user_text)
+                if search_query is not None:
+                    log_debug(f"Directly replying to search intent for query: {search_query[:60]}")
+                    search_result_text = execute_semantic_search_markdown(search_query)
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "method": "session/update",
+                        "params": {
+                            "sessionId": session_id,
+                            "update": {
+                                "sessionUpdate": "agent_message_chunk",
+                                "content": {
+                                    "type": "text",
+                                    "text": search_result_text
+                                }
+                            }
+                        }
+                    })
+                    send_response({
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {
+                            "stopReason": "end_turn"
+                        }
+                    })
+                    continue
+
                 # ヘルプ・コマンドガイドの検知（/help, /ヘルプ, 「ヘルプ」「コマンド一覧」など）
                 if is_help_intent(user_text):
                     log_debug(f"Directly replying to help intent for user text: {user_text[:60]}")
