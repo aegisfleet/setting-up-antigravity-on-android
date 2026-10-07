@@ -74,13 +74,6 @@ if [ "$INSTALL_GH" -eq 1 ]; then
     bash "${SCRIPT_DIR}/install-gh.sh"
 fi
 
-# 8. Optional: Google EmbeddingGemma 2
-INSTALL_EMBEDDINGGEMMA="${INSTALL_EMBEDDINGGEMMA:-0}"
-if [ "$INSTALL_EMBEDDINGGEMMA" -eq 1 ]; then
-    echo "[Ubuntu] オプション: Google EmbeddingGemma 2 をセットアップ中..."
-    bash "${SCRIPT_DIR}/install-embeddinggemma.sh"
-fi
-
 # Ensure paths in /root/.bashrc
 if ! grep -q '/usr/local/bin' /root/.bashrc 2>/dev/null; then
     echo 'export PATH="/usr/local/bin:$PATH"' >> /root/.bashrc

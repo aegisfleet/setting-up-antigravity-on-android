@@ -72,20 +72,6 @@ if [ "$INSTALL_GH" -eq 0 ] && [ -t 0 ]; then
     esac
 fi
 
-INSTALL_EMBEDDINGGEMMA="${INSTALL_EMBEDDINGGEMMA:-0}"
-if [ "$INSTALL_EMBEDDINGGEMMA" -eq 0 ] && [ -t 0 ]; then
-    echo -e "${YELLOW}Google EmbeddingGemma 2 (ローカルAI意味検索 & MCP連携 / 約1.5GB) もセットアップしますか？ [y/N]: ${NC}"
-    read -r ans || ans="n"
-    case "$ans" in
-        [yY][eE][sS]|[yY])
-            INSTALL_EMBEDDINGGEMMA=1
-            ;;
-        *)
-            INSTALL_EMBEDDINGGEMMA=0
-            ;;
-    esac
-fi
-
 # 3. Termux host dependencies
 echo -e "${BLUE}[1/4] Termux ホストのパッケージを更新・インストール中...${NC}"
 pkg update -y
@@ -135,7 +121,6 @@ proot-distro login ubuntu -- /bin/bash -c "
     export INSTALL_ANDROID_SDK=\"$INSTALL_ANDROID_SDK\"
     export INSTALL_CODEX=\"$INSTALL_CODEX\"
     export INSTALL_GH=\"$INSTALL_GH\"
-    export INSTALL_EMBEDDINGGEMMA=\"$INSTALL_EMBEDDINGGEMMA\"
     bash /root/setting-up-antigravity-on-android/scripts/setup-ubuntu.sh
 " < /dev/null
 
@@ -288,38 +273,22 @@ proot-distro login ubuntu -- bash /root/setting-up-antigravity-on-android/script
 EOF
 chmod +x "${PREFIX_BIN}/t3-install-sdk"
 
-# t3-install-embedding
-cat << 'EOF' > "${PREFIX_BIN}/t3-install-embedding"
-#!/data/data/com.termux/files/usr/bin/bash
-proot-distro login ubuntu -- bash /root/setting-up-antigravity-on-android/scripts/install-embeddinggemma.sh
-EOF
-chmod +x "${PREFIX_BIN}/t3-install-embedding"
-
-# t3-search (Termux から直接意味検索を実行)
-cat << 'EOF' > "${PREFIX_BIN}/t3-search"
-#!/data/data/com.termux/files/usr/bin/bash
-proot-distro login ubuntu -- t3-search "$@"
-EOF
-chmod +x "${PREFIX_BIN}/t3-search"
-
 echo ""
 echo -e "${GREEN}================================================================${NC}"
 echo -e "${GREEN}  セットアップが完了しました！${NC}"
 echo -e "${GREEN}================================================================${NC}"
 echo ""
 echo -e "利用可能なコマンド:"
-echo -e "  ${CYAN}t3-start${NC}             : T3 Code サーバーを起動 (http://127.0.0.1:3773)"
-echo -e "  ${CYAN}t3-stop${NC}              : T3 Code サーバーを停止"
-echo -e "  ${CYAN}t3-status${NC}            : サーバーの稼働状態とログを確認"
-echo -e "  ${CYAN}t3-quota${NC}             : Antigravity の利用状況・残りクォータを確認"
-echo -e "  ${CYAN}t3-shell${NC}             : Ubuntu PRoot 環境のシェルにログイン"
-echo -e "  ${CYAN}codex${NC}                : OpenAI Codex CLI（'codex login' などを Termux から直接実行可能）"
-echo -e "  ${CYAN}gh${NC}                   : GitHub CLI（'gh auth login' などを Termux から直接実行可能）"
-echo -e "  ${CYAN}t3-search${NC}            : EmbeddingGemma 2 による自然言語コード意味検索"
-echo -e "  ${CYAN}t3-install-codex${NC}     : OpenAI Codex CLI のセットアップ（後からいつでも実行可能）"
-echo -e "  ${CYAN}t3-install-gh${NC}        : GitHub CLI のセットアップ（後からいつでも実行可能）"
-echo -e "  ${CYAN}t3-install-embedding${NC} : EmbeddingGemma 2 (MCP連携) のセットアップ（後からいつでも実行可能）"
-echo -e "  ${CYAN}t3-install-sdk${NC}       : Android SDK (APKビルド環境) のセットアップ（後からいつでも実行可能）"
+echo -e "  ${CYAN}t3-start${NC}         : T3 Code サーバーを起動 (http://127.0.0.1:3773)"
+echo -e "  ${CYAN}t3-stop${NC}          : T3 Code サーバーを停止"
+echo -e "  ${CYAN}t3-status${NC}        : サーバーの稼働状態とログを確認"
+echo -e "  ${CYAN}t3-quota${NC}         : Antigravity の利用状況・残りクォータを確認"
+echo -e "  ${CYAN}t3-shell${NC}         : Ubuntu PRoot 環境のシェルにログイン"
+echo -e "  ${CYAN}codex${NC}            : OpenAI Codex CLI（'codex login' などを Termux から直接実行可能）"
+echo -e "  ${CYAN}gh${NC}               : GitHub CLI（'gh auth login' などを Termux から直接実行可能）"
+echo -e "  ${CYAN}t3-install-codex${NC} : OpenAI Codex CLI のセットアップ（後からいつでも実行可能）"
+echo -e "  ${CYAN}t3-install-gh${NC}    : GitHub CLI のセットアップ（後からいつでも実行可能）"
+echo -e "  ${CYAN}t3-install-sdk${NC}   : Android SDK (APKビルド環境) のセットアップ（後からいつでも実行可能）"
 echo ""
 echo -e "${YELLOW}💡 【初回のみ】Antigravity の Google アカウント認証を行ってください:${NC}"
 echo -e "   1. ${CYAN}t3-shell${NC} を実行して Ubuntu シェルに入ります。"

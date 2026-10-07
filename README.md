@@ -55,13 +55,8 @@ Android 上の **Termux**（Google Play 版 / GitHub Releases 版 / F-Droid 版�
   - 軽量プロキシブリッジ (`scripts/codex_t3_bridge.py`) により、T3 Code のモデル選択画面で Codex モデル（GPT-6-Luna 等）の横にもリアルタイム残量（`[残99%]` 等）を自動付加。
 - 🐙 **GitHub CLI (`gh`) 連携（オプション）**:
   - 公式最新 APT リポジトリから ARM64 向け `gh` を導入。OAuth デバイス認証（`gh auth login`）で Git 認証ヘルパーや Pull Request・Issue 操作を自動完結。
-- 🔍 **Google EmbeddingGemma 2 & MCP 連携（オプション）**:
-  - Google DeepMind の最新マルチモーダル埋め込みモデル（740M / 1.49GB）を端末内でローカル完全駆動。
-  - 自然言語コード意味検索コマンド（`t3-search`）と、T3 Code / Antigravity CLI から呼び出せる **MCP (Model Context Protocol) サーバー**（`t3-embed-mcp`）を統合。
-  - チャットエージェント（Gemini 3.8 Flash 等）がローカルコードベースを自律的に意味検索して関連実装をピンポイント探索。
-  - OpenAI 互換 Embedding API サーバー（`/v1/embeddings`）機能も内蔵。
 - 📱 **直感的な操作コマンド**:
-  - `t3-start`、`t3-stop`、`t3-status`、`t3-quota`、`t3-shell`、`codex`、`gh`、`t3-search`、`t3-install-codex`、`t3-install-gh`、`t3-install-embedding` などの Termux コマンドを自動生成。
+  - `t3-start`、`t3-stop`、`t3-status`、`t3-quota`、`t3-shell`、`codex`、`gh`、`t3-install-codex`、`t3-install-gh` などの Termux コマンドを自動生成。
 
 ---
 
@@ -201,10 +196,8 @@ t3-start
 | `t3-shell` | Ubuntu PRoot 環境の bash シェルに対話的にログイン |
 | `codex` | OpenAI Codex CLI（Termux から直接 `codex login` 等を実行可能） |
 | `gh` | GitHub CLI（Termux から直接 `gh auth login` 等を実行可能） |
-| `t3-search` | Google EmbeddingGemma 2 によるローカル自然言語コード意味検索 |
 | `t3-install-codex` | OpenAI Codex CLI をセットアップ（後からいつでも追加可能） |
 | `t3-install-gh` | GitHub CLI をセットアップ（後からいつでも追加可能） |
-| `t3-install-embedding` | Google EmbeddingGemma 2 (MCP連携) をセットアップ（後からいつでも追加可能） |
 | `t3-install-sdk` | Android SDK (APKビルド環境) をセットアップ（後からいつでも追加可能） |
 
 ---
@@ -278,75 +271,6 @@ gh auth login
 ※ Personal Access Token をお持ちの場合は以下でも即座に認証可能です:
 ```bash
 echo "ghp_your_token" | gh auth login --with-token
-```
-
----
-
-## オプション: Google EmbeddingGemma 2 (ローカルAI意味検索 & MCP連携)
-
-Google DeepMind が公開した最新のマルチモーダル埋め込みモデル **[EmbeddingGemma 2](https://huggingface.co/google/embeddinggemma-2)**（740M パラメータ / 重み約 1.49 GB）を、Android (ARM64) 端末内で完全ローカル駆動させます。
-
-自然言語によるコード探索（セマンティック検索）に加え、T3 Code 上の AI エージェント（Gemini 3.8 Flash や Claude）が自律的にコードを意味検索できる **MCP (Model Context Protocol) サーバー** として機能します。
-
-> 💡 **動作実績（本環境実測）**:
-> - **メモリ消費**: ピーク約 1.0 GB（Android 端末の空きメモリ内で安定動作、OOM クラッシュなし）
-> - **推論速度**: 5 文のベクトル化が約 5.9 秒（1 文あたり約 1.2 秒、CPU 7 スレッド並列）
-> - **精度**: 日本語の自然言語の問いに対して、関連するコード・ドキュメントを極めて高精度にコサイン類似度で順位付け可能。
-
-### インストール方法（いつでも実行可能）
-
-- **Termux から実行する場合**:
-  ```bash
-  t3-install-embedding
-  ```
-- **Ubuntu PRoot 内から実行する場合**:
-  ```bash
-  bash /root/setting-up-antigravity-on-android/scripts/install-embeddinggemma.sh
-  ```
-
-※ スクリプト実行時に Python 仮想環境 (`/opt/embedding-env`) の構築、PyTorch (CPU aarch64)、Transformers、SentenceTransformers の導入、モデル重み（約 1.49 GB）のキャッシュ、および Antigravity CLI への MCP サーバー自動登録がワンストップで完了します。
-
-### 活用方法
-
-#### 1. ターミナルから自然言語コード意味検索 (`t3-search`)
-Termux や T3 Code の内蔵ターミナルから、プロジェクト内のコードやドキュメントを自然言語でセマンティック検索できます。
-
-```bash
-# カレントディレクトリ内のコードを意味検索
-t3-search "ACP bridge implementation"
-
-# ディレクトリと取得件数を指定
-t3-search "ユーザー認証の仕組み" -p /root/setting-up-antigravity-on-android -k 3
-```
-
-#### 2. モデル選択メニューから「EmbeddingGemma 2」を選んでチャット開始
-T3 Code のチャット画面右上のモデル選択ドロップダウンから、Gemini や Claude と同様に **`EmbeddingGemma 2 [ローカル / 意味検索]`** を事前に選択して新しいチャットを開始できます。
-
-- **動作**:
-  このモデルを選択したスレッドでは、チャット欄に自然言語メッセージ（例: `認証トークンのリフレッシュ処理`、`エラーハンドリング`）を送信するだけで、**推論トークン消費ゼロ**でプロジェクト内を自動ベクトル検索し、該当コードスニペットとファイル位置をチャット画面に直接返答します。
-- スラッシュコマンド（`/search`）を打つ必要すらなく、通常の対話感覚でローカルコード検索専用スレッドとして活用できます。
-
-#### 3. T3 Code / Antigravity & Codex AI エージェント連携 (MCP サーバー)
-セットアップ時に `agy mcp add embedding /usr/local/bin/t3-embed-mcp` および `codex mcp add embedding -- /usr/local/bin/t3-embed-mcp` が自動実行され、Antigravity CLI および Codex CLI の両方で MCP サーバーとして有効化されます。
-
-> 💡 **Provider 設定について**:
-> EmbeddingGemma 2 は文章生成モデル（LLM）ではなくテキスト埋め込み（Embedding）特化モデルのため、独立した生成 Provider ではなく **Antigravity や Codex の AI エージェントが利用する MCP ツール** として動作します。チャットやコード生成を行う際は、Provider には通常通り「Antigravity」または「Codex」を選択してご利用ください。
-
-T3 Code チャット画面でエージェント（Gemini 3.8 Flash、Claude、GPT-6 等）に対して以下のように依頼すると、エージェントが自律的に EmbeddingGemma 2 のツール (`semantic_code_search`) を呼び出してプロジェクト内を意味検索します:
-- *「プロジェクト内からクォータ残量計算のロジックを探して」*
-- *「認証処理を実装している箇所をセマンティック検索で見つけて」*
-
-#### 4. OpenAI 互換 Embedding API サーバー (`t3-embed-server`)
-標準的な `/v1/embeddings` エンドポイントを提供する軽量 HTTP サーバーです。他のエディタ拡張機能や RAG ツールからローカル Embedding モデルとして利用できます。
-
-```bash
-# ポート 8000 でバックグラウンド起動
-t3-embed-server --port 8000 &
-
-# API テスト
-curl -X POST http://127.0.0.1:8000/v1/embeddings \
-  -H "Content-Type: application/json" \
-  -d '{"input": "def hello(): pass"}'
 ```
 
 ---
