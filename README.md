@@ -52,8 +52,10 @@ Android 上の **Termux**（Google Play 版 / GitHub Releases 版 / F-Droid 版�
 - 🤖 **OpenAI Codex CLI 連携（オプション）**:
   - 公式 Codex CLI (`@openai/codex`) の ARM64 静的バイナリと T3 Code の `codex app-server` 連携をワンタッチ構築。
   - ChatGPT アカウントの OAuth デバイス認証 (`codex login`) または OpenAI API キーに対応。
+- 🐙 **GitHub CLI (`gh`) 連携（オプション）**:
+  - 公式最新 APT リポジトリから ARM64 向け `gh` を導入。OAuth デバイス認証（`gh auth login`）で Git 認証ヘルパーや Pull Request・Issue 操作を自動完結。
 - 📱 **直感的な操作コマンド**:
-  - `t3-start`、`t3-stop`、`t3-status`、`t3-quota`、`t3-shell`、`codex`、`t3-install-codex` などの Termux コマンドを自動生成。
+  - `t3-start`、`t3-stop`、`t3-status`、`t3-quota`、`t3-shell`、`codex`、`gh`、`t3-install-codex`、`t3-install-gh` などの Termux コマンドを自動生成。
 
 ---
 
@@ -109,9 +111,10 @@ curl -fsSL "https://raw.githubusercontent.com/aegisfleet/setting-up-antigravity-
 > スクリプト実行中に以下の追加オプションをセットアップするか尋ねられます。
 > 1. `Android SDK (APKビルド環境) もセットアップしますか？ [y/N]:`
 > 2. `OpenAI Codex CLI (Codex プロバイダ連携) もセットアップしますか？ [y/N]:`
+> 3. `GitHub CLI (gh / リポジトリ・PR連携) もセットアップしますか？ [y/N]:`
 > 
-> ここでスキップ（Enter）した場合でも、後からいつでも `t3-install-sdk` や `t3-install-codex` コマンドで個別にインストール可能です。
-> （環境変数 `INSTALL_ANDROID_SDK=1` や `INSTALL_CODEX=1` を指定して非対話実行も可能）
+> ここでスキップ（Enter）した場合でも、後からいつでも `t3-install-sdk`、`t3-install-codex`、`t3-install-gh` コマンドで個別にインストール可能です。
+> （環境変数 `INSTALL_ANDROID_SDK=1`、`INSTALL_CODEX=1`、`INSTALL_GH=1` を指定して非対話実行も可能）
 
 ---
 
@@ -186,7 +189,9 @@ t3-start
 | `t3-quota` | Antigravity の利用状況（残りクォータ / レート制限）を確認（`使用量`, `使用状況` も利用可） |
 | `t3-shell` | Ubuntu PRoot 環境の bash シェルに対話的にログイン |
 | `codex` | OpenAI Codex CLI（Termux から直接 `codex login` 等を実行可能） |
+| `gh` | GitHub CLI（Termux から直接 `gh auth login` 等を実行可能） |
 | `t3-install-codex` | OpenAI Codex CLI をセットアップ（後からいつでも追加可能） |
+| `t3-install-gh` | GitHub CLI をセットアップ（後からいつでも追加可能） |
 | `t3-install-sdk` | Android SDK (APKビルド環境) をセットアップ（後からいつでも追加可能） |
 
 ---
@@ -224,6 +229,43 @@ Termux または Ubuntu 内からワンコマンドでセットアップでき�
    ```
 
 認証完了後、`t3-stop && t3-start` でサーバーを再起動すると、T3 Code 画面のモデル選択に Codex モデル群が表示されます。
+
+---
+
+## オプション: GitHub CLI (`gh`) のセットアップ
+
+GitHub 公式の **GitHub CLI (`gh`)** を導入し、端末内からリポジトリの clone/push、Pull Request の作成・確認、Issue 管理などを円滑に行えるようにします。
+
+### インストール方法（いつでも実行可能）
+
+- **Termux から実行する場合**:
+  ```bash
+  t3-install-gh
+  ```
+- **Ubuntu PRoot 内から実行する場合**:
+  ```bash
+  bash /root/setting-up-antigravity-on-android/scripts/install-gh.sh
+  ```
+
+### アカウント認証（ログイン）
+
+Termux または Ubuntu シェルで以下を実行します。
+
+```bash
+gh auth login
+```
+
+- **対話プロンプトでの選択例**:
+  1. `What account do you want to log into?` → **GitHub.com**
+  2. `What is your preferred protocol for Git operations?` → **HTTPS**
+  3. `Authenticate Git with your GitHub credentials?` → **Yes**
+  4. `How would you like to authenticate GitHub CLI?` → **Login with a web browser**
+  5. 表示された 8 桁コードをブラウザ（https://github.com/login/device）に入力して承認します。
+
+※ Personal Access Token をお持ちの場合は以下でも即座に認証可能です:
+```bash
+echo "ghp_your_token" | gh auth login --with-token
+```
 
 ---
 
@@ -302,6 +344,7 @@ setting-up-antigravity-on-android/
     ├── check_quota.py          # Antigravity 利用状況・レート制限チェッカー
     ├── t3-server-manager.sh    # T3 Code バックグラウンドサーバー管理
     ├── install-codex.sh        # OpenAI Codex CLI セットアップ & T3 Code 有効化
+    ├── install-gh.sh           # GitHub CLI (gh) セットアップ & Termux 連携
     └── install-android-sdk.sh  # Android SDK (aapt2 ARM64対応) セットアップ
 ```
 

@@ -58,6 +58,20 @@ if [ "$INSTALL_CODEX" -eq 0 ] && [ -t 0 ]; then
     esac
 fi
 
+INSTALL_GH="${INSTALL_GH:-0}"
+if [ "$INSTALL_GH" -eq 0 ] && [ -t 0 ]; then
+    echo -e "${YELLOW}GitHub CLI (gh / リポジトリ・PR連携) もセットアップしますか？ [y/N]: ${NC}"
+    read -r ans || ans="n"
+    case "$ans" in
+        [yY][eE][sS]|[yY])
+            INSTALL_GH=1
+            ;;
+        *)
+            INSTALL_GH=0
+            ;;
+    esac
+fi
+
 # 3. Termux host dependencies
 echo -e "${BLUE}[1/4] Termux ホストのパッケージを更新・インストール中...${NC}"
 pkg update -y
@@ -106,6 +120,7 @@ proot-distro login ubuntu -- /bin/bash -c "
 
     export INSTALL_ANDROID_SDK=\"$INSTALL_ANDROID_SDK\"
     export INSTALL_CODEX=\"$INSTALL_CODEX\"
+    export INSTALL_GH=\"$INSTALL_GH\"
     bash /root/setting-up-antigravity-on-android/scripts/setup-ubuntu.sh
 " < /dev/null
 
@@ -237,6 +252,20 @@ proot-distro login ubuntu -- codex "$@"
 EOF
 chmod +x "${PREFIX_BIN}/codex"
 
+# t3-install-gh
+cat << 'EOF' > "${PREFIX_BIN}/t3-install-gh"
+#!/data/data/com.termux/files/usr/bin/bash
+proot-distro login ubuntu -- bash /root/setting-up-antigravity-on-android/scripts/install-gh.sh
+EOF
+chmod +x "${PREFIX_BIN}/t3-install-gh"
+
+# gh (Termux から直接 gh コマンドを実行)
+cat << 'EOF' > "${PREFIX_BIN}/gh"
+#!/data/data/com.termux/files/usr/bin/bash
+proot-distro login ubuntu -- gh "$@"
+EOF
+chmod +x "${PREFIX_BIN}/gh"
+
 # t3-install-sdk
 cat << 'EOF' > "${PREFIX_BIN}/t3-install-sdk"
 #!/data/data/com.termux/files/usr/bin/bash
@@ -256,7 +285,9 @@ echo -e "  ${CYAN}t3-status${NC}        : サーバーの稼働状態とログ�
 echo -e "  ${CYAN}t3-quota${NC}         : Antigravity の利用状況・残りクォータを確認"
 echo -e "  ${CYAN}t3-shell${NC}         : Ubuntu PRoot 環境のシェルにログイン"
 echo -e "  ${CYAN}codex${NC}            : OpenAI Codex CLI（'codex login' などを Termux から直接実行可能）"
+echo -e "  ${CYAN}gh${NC}               : GitHub CLI（'gh auth login' などを Termux から直接実行可能）"
 echo -e "  ${CYAN}t3-install-codex${NC} : OpenAI Codex CLI のセットアップ（後からいつでも実行可能）"
+echo -e "  ${CYAN}t3-install-gh${NC}    : GitHub CLI のセットアップ（後からいつでも実行可能）"
 echo -e "  ${CYAN}t3-install-sdk${NC}   : Android SDK (APKビルド環境) のセットアップ（後からいつでも実行可能）"
 echo ""
 echo -e "${YELLOW}💡 【初回のみ】Antigravity の Google アカウント認証を行ってください:${NC}"

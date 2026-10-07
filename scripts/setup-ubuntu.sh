@@ -67,6 +67,13 @@ if [ "$INSTALL_CODEX" -eq 1 ]; then
     bash "${SCRIPT_DIR}/install-codex.sh"
 fi
 
+# 7. Optional: GitHub CLI (gh)
+INSTALL_GH="${INSTALL_GH:-0}"
+if [ "$INSTALL_GH" -eq 1 ]; then
+    echo "[Ubuntu] オプション: GitHub CLI (gh) をセットアップ中..."
+    bash "${SCRIPT_DIR}/install-gh.sh"
+fi
+
 # Ensure paths in /root/.bashrc
 if ! grep -q '/usr/local/bin' /root/.bashrc 2>/dev/null; then
     echo 'export PATH="/usr/local/bin:$PATH"' >> /root/.bashrc
