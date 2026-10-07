@@ -42,7 +42,7 @@ Android 上の **Termux**（Google Play 版 / GitHub Releases 版 / F-Droid 版�
   - Gemini 3 系モデルでの `--effort medium` 自動付与や、モデル・セッションエラー時の自動フォールバック機構を内蔵。
 - 📊 **利用状況 (Quota / レート制限) のリアルタイム把握**:
   - **T3 Code チャット画面**: `/quota` や `/usage` に加え、**「使用量」「使用状況」「/使用量」「残量」などの日本語**で送信するだけでも、**推論トークンを消費することなく**（0 トークンで）即座に最新の残りパーセント（Gemini / Claude 各グループの 5時間枠・週間枠、全回復予定時刻）をグラフィカルに表示。※ OpenAI Codex 導入時は Codex のレート制限・残り枠も自動で併記されます。
-  - **モデル選択メニュー**: ドロップダウンのモデル名横に現在の残り枠（例: `Gemini 3.8 Flash (High) [残72%]`）を動的表示。切り替え前に残量を一目で確認可能。
+  - **モデル選択メニュー**: ドロップダウンのモデル名横に現在の残り枠（例: `Gemini 3.8 Flash (High) [残72%]`, `GPT-6-Luna [残99%]`）を動的表示。切り替え前に残量を一目で確認可能。
   - **ターミナル連携**: Termux / Ubuntu 上で `t3-quota`（または日本語コマンド `使用量` / `使用状況`）を実行するだけでも即座に確認可能（Codex がインストールされていれば OpenAI Codex の利用状況も自動検出して一括表示）。
 - 🎯 **スラッシュコマンド補完 & トークン消費ゼロのヘルプガイド**:
   - **チャット欄での `/` 入力サジェスト**: 入力欄で `/` を入力するだけで、利用可能なコマンド群（`/boost`, `/plan`, `/goal`, `/teamwork-preview`, `/grill-me`, `/quota`, `/help` 等）が日本語の説明付きでポップアップ表示。
@@ -52,6 +52,7 @@ Android 上の **Termux**（Google Play 版 / GitHub Releases 版 / F-Droid 版�
 - 🤖 **OpenAI Codex CLI 連携（オプション）**:
   - 公式 Codex CLI (`@openai/codex`) の ARM64 静的バイナリと T3 Code の `codex app-server` 連携をワンタッチ構築。
   - ChatGPT アカウントの OAuth デバイス認証 (`codex login`) または OpenAI API キーに対応。
+  - 軽量プロキシブリッジ (`scripts/codex_t3_bridge.py`) により、T3 Code のモデル選択画面で Codex モデル（GPT-6-Luna 等）の横にもリアルタイム残量（`[残99%]` 等）を自動付加。
 - 🐙 **GitHub CLI (`gh`) 連携（オプション）**:
   - 公式最新 APT リポジトリから ARM64 向け `gh` を導入。OAuth デバイス認証（`gh auth login`）で Git 認証ヘルパーや Pull Request・Issue 操作を自動完結。
 - 📱 **直感的な操作コマンド**:
@@ -344,6 +345,7 @@ setting-up-antigravity-on-android/
     ├── check_quota.py          # Antigravity & Codex 利用状況・レート制限チェッカー
     ├── t3-server-manager.sh    # T3 Code バックグラウンドサーバー管理
     ├── install-codex.sh        # OpenAI Codex CLI セットアップ & T3 Code 有効化
+    ├── codex_t3_bridge.py      # T3 Code ↔ Codex CLI 透過プロキシブリッジ (モデル名への残量動的付加)
     ├── install-gh.sh           # GitHub CLI (gh) セットアップ & Termux 連携
     └── install-android-sdk.sh  # Android SDK (aapt2 ARM64対応) セットアップ
 ```

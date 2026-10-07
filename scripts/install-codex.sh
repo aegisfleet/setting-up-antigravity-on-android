@@ -77,6 +77,20 @@ else
     echo "[Codex] (警告) ネイティブバイナリの直接リンクに失敗しました。npm のデフォルトラッパーを使用します。"
 fi
 
+# T3 Code 用の透過ブリッジ (/usr/local/bin/codex-t3-bridge) を設定
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BRIDGE_SRC="${SCRIPT_DIR}/codex_t3_bridge.py"
+if [ -f "$BRIDGE_SRC" ]; then
+    chmod +x "$BRIDGE_SRC"
+    cat << 'EOF' > /usr/local/bin/codex-t3-bridge
+#!/usr/bin/env bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 -u /root/setting-up-antigravity-on-android/scripts/codex_t3_bridge.py "$@"
+EOF
+    chmod +x /usr/local/bin/codex-t3-bridge
+    echo "[Codex] T3 Code 連携ブリッジを配置しました: /usr/local/bin/codex-t3-bridge"
+fi
+
 # 動作確認
 if command -v codex >/dev/null 2>&1; then
     CODEX_VER="$(codex --version 2>&1 || true)"
@@ -114,7 +128,7 @@ inst["enabled"] = True
 if "config" not in inst or not isinstance(inst["config"], dict):
     inst["config"] = {}
 
-inst["config"]["binaryPath"] = "/usr/local/bin/codex"
+inst["config"]["binaryPath"] = "/usr/local/bin/codex-t3-bridge"
 inst["config"].setdefault("homePath", "")
 inst["config"].setdefault("shadowHomePath", "")
 inst["config"].setdefault("launchArgs", "")
@@ -124,7 +138,7 @@ os.makedirs(os.path.dirname(settings_path), exist_ok=True)
 with open(settings_path, "w", encoding="utf-8") as f:
     json.dump(data, f, indent=2, ensure_ascii=False)
 
-print("[Codex] T3 Code の settings.json (codex: enabled=True) を更新しました。")
+print("[Codex] T3 Code の settings.json (codex: enabled=True, binaryPath=/usr/local/bin/codex-t3-bridge) を更新しました。")
 EOF
 
 # 7. Termux コマンドの作成 (Termux 環境が存在する場合)
