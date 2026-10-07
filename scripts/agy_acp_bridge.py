@@ -13,6 +13,7 @@ import uuid
 import shutil
 import subprocess
 import threading
+import signal
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
@@ -56,6 +57,19 @@ MODEL_ALIASES = {
 current_model = "gemini-3.8-flash-medium"
 cached_models = []
 
+stdout_lock = threading.Lock()
+
+class PromptContext:
+    def __init__(self, session_id, msg_id):
+        self.session_id = session_id
+        self.msg_id = msg_id
+        self.proc = None
+        self.cancelled = threading.Event()
+        self.lock = threading.Lock()
+
+active_prompts = {}
+active_prompts_lock = threading.Lock()
+
 def log_debug(msg):
     try:
         with open(LOG_FILE, "a", encoding="utf-8") as f:
@@ -66,8 +80,9 @@ def log_debug(msg):
 def send_response(obj):
     raw = json.dumps(obj)
     log_debug(">> " + raw)
-    sys.stdout.write(raw + "\n")
-    sys.stdout.flush()
+    with stdout_lock:
+        sys.stdout.write(raw + "\n")
+        sys.stdout.flush()
 
 def load_session_map():
     if os.path.exists(SESSION_MAP_FILE):
@@ -411,13 +426,18 @@ def build_agy_cmd(agy_bin, prompt_text, model=None, effort=None, conv_id=None):
     return cmd
 
 
-def execute_agy(cmd, session_id, agy_env):
+def execute_agy(cmd, session_id, agy_env, prompt_ctx=None):
     log_debug(f"Spawning agy: {cmd}")
     err_log_path = "/tmp/agy_cmd_err.log"
     full_output = ""
     err_msg = ""
     retcode = 0
     captured_conv_id = None
+
+    if prompt_ctx and prompt_ctx.cancelled.is_set():
+        log_debug(f"Prompt already cancelled before execution: {session_id}")
+        return -1, "", "Cancelled"
+
     try:
         with open(err_log_path, "w+", encoding="utf-8", errors="replace") as err_file:
             proc = subprocess.Popen(
@@ -426,9 +446,22 @@ def execute_agy(cmd, session_id, agy_env):
                 stderr=err_file,
                 text=True,
                 bufsize=1,
-                env=agy_env
+                env=agy_env,
+                preexec_fn=os.setsid
             )
+            if prompt_ctx:
+                with prompt_ctx.lock:
+                    prompt_ctx.proc = proc
+                    if prompt_ctx.cancelled.is_set():
+                        try:
+                            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                        except Exception:
+                            proc.terminate()
+
             for line in iter(proc.stdout.readline, ''):
+                if prompt_ctx and prompt_ctx.cancelled.is_set():
+                    log_debug(f"Cancellation observed during readline: {session_id}")
+                    break
                 if not line:
                     break
                 line_str = line.strip()
@@ -532,6 +565,22 @@ def execute_agy(cmd, session_id, agy_env):
                             }
                         }
                     })
+
+            if prompt_ctx and prompt_ctx.cancelled.is_set():
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                    proc.wait(timeout=2)
+                except Exception:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                try:
+                    proc.stdout.close()
+                except Exception:
+                    pass
+                log_debug(f"Subprocess terminated due to cancellation for session: {session_id}")
+                return -1, full_output, "Cancelled"
 
             proc.stdout.close()
             retcode = proc.wait()
@@ -644,6 +693,188 @@ def get_session_setup_result(session_id=None):
         ]
     }
     return res
+
+def handle_prompt_worker(session_id, user_text, msg_id, prompt_ctx):
+    global current_model, session_map
+    try:
+        agy_bin = find_agy_binary()
+
+        agy_env = dict(os.environ)
+        agy_env["HOME"] = "/root"
+        agy_env["PATH"] = "/usr/local/bin:/root/.local/bin:" + agy_env.get("PATH", "/usr/bin:/bin")
+
+        is_json_request = "Return only the requested JSON object" in user_text or "outputSchema" in user_text
+
+        if is_json_request:
+            # タイトル生成要求には即座に軽量JSONを返して並行競合を防止
+            title = extract_thread_title(user_text)
+            log_debug(f"Generated thread title: {title}")
+            title_json = json.dumps({"title": title, "needsRefinement": False}, ensure_ascii=False)
+            send_response({
+                "jsonrpc": "2.0",
+                "method": "session/update",
+                "params": {
+                    "sessionId": session_id,
+                    "update": {
+                        "sessionUpdate": "agent_message_chunk",
+                        "content": {
+                            "type": "text",
+                            "text": title_json
+                        }
+                    }
+                }
+            })
+            return
+
+        # ヘルプ・コマンドガイドの検知（/help, /ヘルプ, 「ヘルプ」「コマンド一覧」など）
+        if is_help_intent(user_text):
+            log_debug(f"Directly replying to help intent for user text: {user_text[:60]}")
+            help_text = format_help_markdown()
+            send_response({
+                "jsonrpc": "2.0",
+                "method": "session/update",
+                "params": {
+                    "sessionId": session_id,
+                    "update": {
+                        "sessionUpdate": "agent_message_chunk",
+                        "content": {
+                            "type": "text",
+                            "text": help_text
+                        }
+                    }
+                }
+            })
+            return
+
+        # クォータ確認リクエストの検知（/quota, /使用量, 「使用量」「使用状況」など）
+        if is_quota_intent(user_text):
+            log_debug(f"Directly replying to quota intent for user text: {user_text[:60]}")
+            quota_data = get_quota_summary(force_refresh=True)
+            codex_data = get_codex_summary(force_refresh=True)
+            quota_text = format_quota_markdown(quota_data, codex_data)
+            send_response({
+                "jsonrpc": "2.0",
+                "method": "session/update",
+                "params": {
+                    "sessionId": session_id,
+                    "update": {
+                        "sessionUpdate": "agent_message_chunk",
+                        "content": {
+                            "type": "text",
+                            "text": quota_text
+                        }
+                    }
+                }
+            })
+            return
+
+        if agy_bin:
+            agy_conv_id = get_agy_conversation(session_id)
+            # 1回目: 選択モデル・セッションID引き継ぎで実行
+            cmd = build_agy_cmd(agy_bin, user_text, current_model, conv_id=agy_conv_id)
+            retcode, full_output, err_msg = execute_agy(cmd, session_id, agy_env, prompt_ctx)
+
+            # 失敗時 (1): conversation が見つからない / 無効な場合は conv_id なしで新規作成リトライ
+            if not prompt_ctx.cancelled.is_set():
+                if retcode != 0 and not full_output and agy_conv_id and any(k in err_msg for k in ["not found", "Conversation", "conversation"]):
+                    log_debug(f"Retrying without conversation ID due to: {err_msg}")
+                    session_map.pop(session_id, None)
+                    save_session_map(session_map)
+                    cmd = build_agy_cmd(agy_bin, user_text, current_model, conv_id=None)
+                    retcode, full_output, err_msg = execute_agy(cmd, session_id, agy_env, prompt_ctx)
+
+            # 失敗時 (2): --effort が明示的に要求された場合のリトライ
+            if not prompt_ctx.cancelled.is_set():
+                if retcode != 0 and not full_output and "requires --effort" in err_msg:
+                    cmd = build_agy_cmd(agy_bin, user_text, current_model, effort="medium", conv_id=get_agy_conversation(session_id))
+                    log_debug(f"Retrying with effort: {cmd}")
+                    retcode, full_output, err_msg = execute_agy(cmd, session_id, agy_env, prompt_ctx)
+
+            # 失敗時 (2.5): --effort がサポートされていないモデルでエラーになった場合のリトライ
+            if not prompt_ctx.cancelled.is_set():
+                if retcode != 0 and not full_output and "--effort is not supported" in err_msg:
+                    log_debug(f"Retrying without effort due to: {err_msg}")
+                    cmd = [
+                        agy_bin,
+                        "-p", user_text,
+                        "--output-format", "stream-json",
+                        "--dangerously-skip-permissions",
+                        "--model", normalize_model_id(current_model, get_available_models(agy_bin))
+                    ]
+                    conv_retry = get_agy_conversation(session_id)
+                    if conv_retry:
+                        cmd.extend(["--conversation", conv_retry])
+                    retcode, full_output, err_msg = execute_agy(cmd, session_id, agy_env, prompt_ctx)
+
+            # 失敗時 (3): モデルエラーの場合はデフォルトモデルでリトライ
+            if not prompt_ctx.cancelled.is_set():
+                if retcode != 0 and not full_output and any(k in err_msg for k in ["invalid model selection", "not supported", "unknown model", "no model configuration"]):
+                    log_debug(f"Retrying with default model due to model error: {err_msg}")
+                    cmd = [
+                        agy_bin,
+                        "-p", user_text,
+                        "--output-format", "stream-json",
+                        "--dangerously-skip-permissions"
+                    ]
+                    conv_retry = get_agy_conversation(session_id)
+                    if conv_retry:
+                        cmd.extend(["--conversation", conv_retry])
+                    retcode, full_output, err_msg = execute_agy(cmd, session_id, agy_env, prompt_ctx)
+
+            if not prompt_ctx.cancelled.is_set() and retcode != 0 and not full_output:
+                send_response({
+                    "jsonrpc": "2.0",
+                    "method": "session/update",
+                    "params": {
+                        "sessionId": session_id,
+                        "update": {
+                            "sessionUpdate": "agent_message_chunk",
+                            "content": {
+                                "type": "text",
+                                "text": f"【Antigravity CLI エラー】\n{err_msg}"
+                            }
+                        }
+                    }
+                })
+
+        else:
+            msg = (
+                f"【Antigravity CLI (agy) が未検出です】\n"
+                f"PRoot Ubuntu 内で以下を実行して agy をインストールおよびログインしてください:\n"
+                f"  curl -fsSL https://antigravity.google/cli/install.sh | bash\n"
+                f"  ln -sf /root/.local/bin/agy /usr/local/bin/agy\n"
+                f"  agy\n"
+            )
+            send_response({
+                "jsonrpc": "2.0",
+                "method": "session/update",
+                "params": {
+                    "sessionId": session_id,
+                    "update": {
+                        "sessionUpdate": "agent_message_chunk",
+                        "content": {
+                            "type": "text",
+                            "text": msg
+                        }
+                    }
+                }
+            })
+    except Exception as e:
+        log_debug(f"Unhandled error in handle_prompt_worker: {e}")
+    finally:
+        with active_prompts_lock:
+            if active_prompts.get(session_id) is prompt_ctx:
+                del active_prompts[session_id]
+
+        stop_reason = "cancelled" if prompt_ctx.cancelled.is_set() else "end_turn"
+        send_response({
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": {
+                "stopReason": stop_reason
+            }
+        })
+        log_debug(f"Finished prompt turn for session {session_id} (msg_id={msg_id}) with stopReason={stop_reason}")
 
 def main():
     global current_model
@@ -761,192 +992,54 @@ def main():
             elif isinstance(prompt_data, str):
                 user_text = prompt_data
 
-            agy_bin = find_agy_binary()
+            with active_prompts_lock:
+                old_ctx = active_prompts.get(session_id)
+                if old_ctx:
+                    log_debug(f"Preempting previous prompt for session: {session_id}")
+                    old_ctx.cancelled.set()
+                    with old_ctx.lock:
+                        if old_ctx.proc and old_ctx.proc.poll() is None:
+                            try:
+                                os.killpg(os.getpgid(old_ctx.proc.pid), signal.SIGTERM)
+                            except Exception:
+                                pass
 
-            agy_env = dict(os.environ)
-            agy_env["HOME"] = "/root"
-            agy_env["PATH"] = "/usr/local/bin:/root/.local/bin:" + agy_env.get("PATH", "/usr/bin:/bin")
+                prompt_ctx = PromptContext(session_id, msg_id)
+                active_prompts[session_id] = prompt_ctx
 
-            is_json_request = "Return only the requested JSON object" in user_text or "outputSchema" in user_text
+            threading.Thread(
+                target=handle_prompt_worker,
+                args=(session_id, user_text, msg_id, prompt_ctx),
+                daemon=True
+            ).start()
 
-            if is_json_request:
-                # タイトル生成要求には即座に軽量JSONを返して並行競合を防止
-                title = extract_thread_title(user_text)
-                log_debug(f"Generated thread title: {title}")
-                title_json = json.dumps({"title": title, "needsRefinement": False}, ensure_ascii=False)
-                send_response({
-                    "jsonrpc": "2.0",
-                    "method": "session/update",
-                    "params": {
-                        "sessionId": session_id,
-                        "update": {
-                            "sessionUpdate": "agent_message_chunk",
-                            "content": {
-                                "type": "text",
-                                "text": title_json
-                            }
-                        }
-                    }
-                })
-                send_response({
-                    "jsonrpc": "2.0",
-                    "id": msg_id,
-                    "result": {
-                        "stopReason": "end_turn"
-                    }
-                })
-            else:
-                # ヘルプ・コマンドガイドの検知（/help, /ヘルプ, 「ヘルプ」「コマンド一覧」など）
-                if is_help_intent(user_text):
-                    log_debug(f"Directly replying to help intent for user text: {user_text[:60]}")
-                    help_text = format_help_markdown()
-                    send_response({
-                        "jsonrpc": "2.0",
-                        "method": "session/update",
-                        "params": {
-                            "sessionId": session_id,
-                            "update": {
-                                "sessionUpdate": "agent_message_chunk",
-                                "content": {
-                                    "type": "text",
-                                    "text": help_text
-                                }
-                            }
-                        }
-                    })
-                    send_response({
-                        "jsonrpc": "2.0",
-                        "id": msg_id,
-                        "result": {
-                            "stopReason": "end_turn"
-                        }
-                    })
-                    continue
+        elif method == "session/cancel":
+            params = req.get("params", {})
+            sid = params.get("sessionId")
+            log_debug(f"Received session/cancel for sessionId: {sid}")
 
-                # クォータ確認リクエストの検知（/quota, /使用量, 「使用量」「使用状況」など）
-                if is_quota_intent(user_text):
-                    log_debug(f"Directly replying to quota intent for user text: {user_text[:60]}")
-                    quota_data = get_quota_summary(force_refresh=True)
-                    codex_data = get_codex_summary(force_refresh=True)
-                    quota_text = format_quota_markdown(quota_data, codex_data)
-                    send_response({
-                        "jsonrpc": "2.0",
-                        "method": "session/update",
-                        "params": {
-                            "sessionId": session_id,
-                            "update": {
-                                "sessionUpdate": "agent_message_chunk",
-                                "content": {
-                                    "type": "text",
-                                    "text": quota_text
-                                }
-                            }
-                        }
-                    })
-                    send_response({
-                        "jsonrpc": "2.0",
-                        "id": msg_id,
-                        "result": {
-                            "stopReason": "end_turn"
-                        }
-                    })
-                    continue
+            with active_prompts_lock:
+                ctx = active_prompts.get(sid)
 
-                if agy_bin:
-                    agy_conv_id = get_agy_conversation(session_id)
-                    # 1回目: 選択モデル・セッションID引き継ぎで実行
-                    cmd = build_agy_cmd(agy_bin, user_text, current_model, conv_id=agy_conv_id)
-                    retcode, full_output, err_msg = execute_agy(cmd, session_id, agy_env)
+            if ctx:
+                log_debug(f"Cancelling active prompt for session {sid}")
+                ctx.cancelled.set()
+                with ctx.lock:
+                    if ctx.proc and ctx.proc.poll() is None:
+                        try:
+                            os.killpg(os.getpgid(ctx.proc.pid), signal.SIGTERM)
+                        except Exception as e:
+                            log_debug(f"Error terminating proc in cancel: {e}")
+                            try:
+                                ctx.proc.terminate()
+                            except Exception:
+                                pass
 
-                    # 失敗時 (1): conversation が見つからない / 無効な場合は conv_id なしで新規作成リトライ
-                    if retcode != 0 and not full_output and agy_conv_id and any(k in err_msg for k in ["not found", "Conversation", "conversation"]):
-                        log_debug(f"Retrying without conversation ID due to: {err_msg}")
-                        session_map.pop(session_id, None)
-                        save_session_map(session_map)
-                        cmd = build_agy_cmd(agy_bin, user_text, current_model, conv_id=None)
-                        retcode, full_output, err_msg = execute_agy(cmd, session_id, agy_env)
-
-                    # 失敗時 (2): --effort が明示的に要求された場合のリトライ
-                    if retcode != 0 and not full_output and "requires --effort" in err_msg:
-                        cmd = build_agy_cmd(agy_bin, user_text, current_model, effort="medium", conv_id=get_agy_conversation(session_id))
-                        log_debug(f"Retrying with effort: {cmd}")
-                        retcode, full_output, err_msg = execute_agy(cmd, session_id, agy_env)
-
-                    # 失敗時 (2.5): --effort がサポートされていないモデルでエラーになった場合のリトライ
-                    if retcode != 0 and not full_output and "--effort is not supported" in err_msg:
-                        log_debug(f"Retrying without effort due to: {err_msg}")
-                        cmd = [
-                            agy_bin,
-                            "-p", user_text,
-                            "--output-format", "stream-json",
-                            "--dangerously-skip-permissions",
-                            "--model", normalize_model_id(current_model, get_available_models(agy_bin))
-                        ]
-                        conv_retry = get_agy_conversation(session_id)
-                        if conv_retry:
-                            cmd.extend(["--conversation", conv_retry])
-                        retcode, full_output, err_msg = execute_agy(cmd, session_id, agy_env)
-
-                    # 失敗時 (3): モデルエラーの場合はデフォルトモデルでリトライ
-                    if retcode != 0 and not full_output and any(k in err_msg for k in ["invalid model selection", "not supported", "unknown model", "no model configuration"]):
-                        log_debug(f"Retrying with default model due to model error: {err_msg}")
-                        cmd = [
-                            agy_bin,
-                            "-p", user_text,
-                            "--output-format", "stream-json",
-                            "--dangerously-skip-permissions"
-                        ]
-                        conv_retry = get_agy_conversation(session_id)
-                        if conv_retry:
-                            cmd.extend(["--conversation", conv_retry])
-                        retcode, full_output, err_msg = execute_agy(cmd, session_id, agy_env)
-
-
-                    if retcode != 0 and not full_output:
-                        send_response({
-                            "jsonrpc": "2.0",
-                            "method": "session/update",
-                            "params": {
-                                "sessionId": session_id,
-                                "update": {
-                                    "sessionUpdate": "agent_message_chunk",
-                                    "content": {
-                                        "type": "text",
-                                        "text": f"【Antigravity CLI エラー】\n{err_msg}"
-                                    }
-                                }
-                            }
-                        })
-
-                else:
-                    msg = (
-                        f"【Antigravity CLI (agy) が未検出です】\n"
-                        f"PRoot Ubuntu 内で以下を実行して agy をインストールおよびログインしてください:\n"
-                        f"  curl -fsSL https://antigravity.google/cli/install.sh | bash\n"
-                        f"  ln -sf /root/.local/bin/agy /usr/local/bin/agy\n"
-                        f"  agy\n"
-                    )
-                    send_response({
-                        "jsonrpc": "2.0",
-                        "method": "session/update",
-                        "params": {
-                            "sessionId": session_id,
-                            "update": {
-                                "sessionUpdate": "agent_message_chunk",
-                                "content": {
-                                    "type": "text",
-                                    "text": msg
-                                }
-                            }
-                        }
-                    })
-
+            if msg_id is not None:
                 send_response({
                     "jsonrpc": "2.0",
                     "id": msg_id,
-                    "result": {
-                        "stopReason": "end_turn"
-                    }
+                    "result": {}
                 })
         elif msg_id is not None:
             send_response({

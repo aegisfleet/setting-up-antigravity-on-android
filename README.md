@@ -39,6 +39,7 @@ Android 上の **Termux**（Google Play 版 / GitHub Releases 版 / F-Droid 版�
 - 🛡 **Android ARM64 最適化ブリッジ & リアルタイムストリーミング**:
   - Android 特有の仮想アドレス空間（39-bit VA）起因で公式 ACP サーバーバイナリが異常終了（Aborted）する問題を解消する軽量 ACP ブリッジ (`scripts/agy_acp_bridge.py`) を提供。
   - `stream-json` 連携により、応答テキストの逐次ストリーミングに加えてツール実行状況（Bash コマンド実行等）をリアルタイム可視化。
+  - **非同期キャンセル・ステアリング対応**: 生成処理中のチャット再入力や中断（`session/cancel` RPC）を非同期検知し、プロセスグループ（`SIGTERM`）を安全かつミリ秒単位で即座停止。タイムアウトエラー（`call-rpc failed for method session/cancel`）を完全に防止。
   - Gemini 3 系モデルでの `--effort medium` 自動付与や、モデル・セッションエラー時の自動フォールバック機構を内蔵。
 - 📊 **利用状況 (Quota / レート制限) のリアルタイム把握**:
   - **T3 Code チャット画面**: `/quota` や `/usage` に加え、**「使用量」「使用状況」「/使用量」「残量」などの日本語**で送信するだけでも、**推論トークンを消費することなく**（0 トークンで）即座に最新の残りパーセント（Gemini / Claude 各グループの 5時間枠・週間枠、全回復予定時刻）をグラフィカルに表示。※ OpenAI Codex 導入時は Codex のレート制限・残り枠も自動で併記されます。
@@ -365,6 +366,9 @@ T3 Code は標準入力/標準出力経由の Agent Client Protocol (ACP) を用
 4. **利用状況 (Quota) のゼロトークン即時回答 & メニュー連携**:
    - チャットで `/quota` や「利用状況」が送られた場合、AIモデルを起動することなく直接 Google Quota API から最新の利用残量を判定し、トークン消費ゼロで即座にグラフィカル表示。
    - モデル選択ドロップダウンの各モデル名に、現在のグループ残り枠（例: `[残72%]`）を動的付与。
+5. **非同期キャンセル・ステアリング対応**:
+   - T3 Code 側で生成途中に再チャットされた場合の `session/cancel` RPC を非同期に受信・即答。
+   - 実行中の `agy` CLI プロセスグループ（`os.killpg`）を安全に停止させ、`stopReason: "cancelled"` を返却することでタイムアウトやランタイム強制切断（`call-rpc failed for method session/cancel`）を防ぎ、スムーズな連続会話を実現。
 
 ---
 
