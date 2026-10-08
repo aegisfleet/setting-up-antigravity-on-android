@@ -94,7 +94,12 @@ def send_android_notification(title, content, notif_id="codex_task"):
                 summary = summary[:77] + "..."
 
             t3_port = os.environ.get("T3_PORT", "3773")
-            action_url = f"termux-open-url http://127.0.0.1:{t3_port}"
+            url = f"http://127.0.0.1:{t3_port}"
+            action_cmd = (
+                f"export PATH=/data/data/com.termux/files/usr/bin:$PATH; "
+                f"termux-notification-remove {notif_id} 2>/dev/null; "
+                f"termux-open-url {url} 2>/dev/null || am start -a android.intent.action.VIEW -d {url} 2>/dev/null"
+            )
 
             cmd = [
                 termux_notif,
@@ -103,7 +108,9 @@ def send_android_notification(title, content, notif_id="codex_task"):
                 "-c", summary,
                 "--priority", "high",
                 "--sound",
-                "--action", action_url
+                "--action", action_cmd,
+                "--button1", "T3 Code を開く",
+                "--button1-action", action_cmd
             ]
             subprocess.run(cmd, timeout=5, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             log_debug(f"Sent Android notification: id={notif_id}, title={title}, summary={summary[:30]}")
