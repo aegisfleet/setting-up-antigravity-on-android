@@ -33,6 +33,7 @@ Android 上の **Termux**（Google Play 版 / GitHub Releases 版 / F-Droid 版�
 - ⚡ **自律エージェント機能（全ツール自動承認）**:
   - エージェント実行時に `--dangerously-skip-permissions` を自動適用。
   - ファイルの作成・編集、ディレクトリ探索、シェルコマンドの実行などを AI が自律的に完結。
+  - 高速コードベース検索ツール **ripgrep (`rg`)** も自動セットアップされ、AI エージェントによる大規模プロジェクトのコード探索やシンボル検索が高速・快適に動作。
 - 💬 **マルチターン会話の完全永続化**:
   - T3 Code のスレッドごとのセッション ID と Antigravity CLI の会話履歴 (`--conversation`) を自動的にマッピング・永続化 (`~/.gemini/antigravity-acp/session_map.json`)。
   - スレッド内で会話が複数ターンに及んでも以前の文脈や指示を完全に保持。

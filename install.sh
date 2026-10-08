@@ -75,7 +75,7 @@ fi
 # 3. Termux host dependencies
 echo -e "${BLUE}[1/4] Termux ホストのパッケージを更新・インストール中...${NC}"
 pkg update -y
-pkg install -y proot-distro curl git tar jq
+pkg install -y proot-distro curl git tar jq ripgrep
 
 # 4. Setup Ubuntu via proot-distro
 echo -e "${BLUE}[2/4] proot-distro で Ubuntu を準備中...${NC}"

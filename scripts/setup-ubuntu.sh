@@ -25,7 +25,8 @@ apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-venv \
-    jq
+    jq \
+    ripgrep
 
 # 2. Setup Node.js LTS (v22.x)
 echo "[Ubuntu] 2/4 Node.js LTS のセットアップ中..."
