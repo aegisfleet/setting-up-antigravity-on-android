@@ -115,8 +115,10 @@ def send_android_notification(title, content, notif_id="antigravity_task"):
             t3_port = os.environ.get("T3_PORT", "3773")
             url = f"http://127.0.0.1:{t3_port}"
             action_cmd = (
-                f"/data/data/com.termux/files/usr/bin/termux-notification-remove {notif_id} 2>/dev/null; "
-                f"TERMUX__USER_ID=0 /data/data/com.termux/files/usr/bin/am start --user 0 -a android.intent.action.VIEW -d {url} 2>/dev/null"
+                f"TERMUX__USER_ID=0 /data/data/com.termux/files/usr/bin/am start --user 0 "
+                f"-a android.intent.action.VIEW -c android.intent.category.BROWSABLE -f 0x10000000 "
+                f"-d {url} 2>/dev/null; "
+                f"/data/data/com.termux/files/usr/bin/termux-notification-remove {notif_id} 2>/dev/null"
             )
 
             cmd = [
