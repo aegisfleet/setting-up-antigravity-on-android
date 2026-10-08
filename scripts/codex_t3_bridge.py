@@ -65,6 +65,53 @@ def extract_quota_from_rate_limits(rate_limits_payload):
             return f"残{rem}%"
     return None
 
+def send_android_notification(title, content, notif_id="codex_task"):
+    """
+    Termux:API (termux-notification) を利用して Android ネイティブ通知を非同期送信する。
+    環境変数 TERMUX_NOTIFICATION / TERMUX_NOTIFY が 0/false/off/no の場合は無効化される。
+    """
+    env_val = os.environ.get("TERMUX_NOTIFICATION", os.environ.get("TERMUX_NOTIFY", "")).strip().lower()
+    if env_val in ("0", "false", "no", "off"):
+        return
+
+    def _worker():
+        try:
+            candidates = [
+                shutil.which("termux-notification"),
+                "/data/data/com.termux/files/usr/bin/termux-notification",
+                "/usr/bin/termux-notification"
+            ]
+            termux_notif = next((c for c in candidates if c and os.path.isfile(c) and os.access(c, os.X_OK)), None)
+            if not termux_notif:
+                return
+
+            clean = re.sub(r'<[^>]+>', '', content)
+            clean = re.sub(r'```.*?```', '', clean, flags=re.DOTALL)
+            clean = re.sub(r'[*_#`~>\[\]]', '', clean)
+            lines = [l.strip() for l in clean.splitlines() if l.strip()]
+            summary = lines[0] if lines else "処理が完了しました。"
+            if len(summary) > 80:
+                summary = summary[:77] + "..."
+
+            t3_port = os.environ.get("T3_PORT", "3773")
+            action_url = f"termux-open-url http://127.0.0.1:{t3_port}"
+
+            cmd = [
+                termux_notif,
+                "-i", notif_id,
+                "-t", title,
+                "-c", summary,
+                "--priority", "high",
+                "--sound",
+                "--action", action_url
+            ]
+            subprocess.run(cmd, timeout=5, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            log_debug(f"Sent Android notification: id={notif_id}, title={title}, summary={summary[:30]}")
+        except Exception as e:
+            log_debug(f"Failed to send Android notification: {e}")
+
+    threading.Thread(target=_worker, daemon=True).start()
+
 def save_quota_tag(tag):
     global cached_quota_tag, cached_quota_time
     if not tag:
@@ -175,8 +222,45 @@ def main():
                     sys.stdout.flush()
                     continue
 
-                # Watch for rate-limit updates to update cache
+                # Watch for turn completion to send Android notification
                 method = msg.get("method")
+                if method == "turn/completed":
+                    try:
+                        params = msg.get("params", {})
+                        turn = params.get("turn", {}) if isinstance(params, dict) else {}
+                        status = turn.get("status") if isinstance(turn, dict) else None
+                        if status in ("completed", "done", None):
+                            agent_text = ""
+                            items = turn.get("items", []) if isinstance(turn, dict) else []
+                            if isinstance(items, list):
+                                for item in reversed(items):
+                                    if isinstance(item, dict):
+                                        content = item.get("content")
+                                        if isinstance(content, list):
+                                            for part in reversed(content):
+                                                if isinstance(part, dict):
+                                                    t = part.get("text") or part.get("output")
+                                                    if t and isinstance(t, str):
+                                                        agent_text = t
+                                                        break
+                                                elif isinstance(part, str):
+                                                    agent_text = part
+                                                    break
+                                        elif isinstance(content, str):
+                                            agent_text = content
+                                        elif isinstance(item.get("output"), str):
+                                            agent_text = item.get("output")
+                                        if agent_text:
+                                            break
+                            send_android_notification(
+                                title="🧠 Codex 完了",
+                                content=agent_text or "タスクの処理が完了しました。",
+                                notif_id="codex_task"
+                            )
+                    except Exception as e:
+                        log_debug(f"Error handling turn/completed notification: {e}")
+
+                # Watch for rate-limit updates to update cache
                 if method == "account/rateLimits/updated":
                     tag = extract_quota_from_rate_limits(msg.get("params", {}))
                     if tag:

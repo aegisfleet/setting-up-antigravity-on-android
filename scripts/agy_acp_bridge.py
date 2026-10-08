@@ -84,6 +84,53 @@ def send_response(obj):
         sys.stdout.write(raw + "\n")
         sys.stdout.flush()
 
+def send_android_notification(title, content, notif_id="antigravity_task"):
+    """
+    Termux:API (termux-notification) を利用して Android ネイティブ通知を非同期送信する。
+    環境変数 TERMUX_NOTIFICATION / TERMUX_NOTIFY が 0/false/off/no の場合は無効化される。
+    """
+    env_val = os.environ.get("TERMUX_NOTIFICATION", os.environ.get("TERMUX_NOTIFY", "")).strip().lower()
+    if env_val in ("0", "false", "no", "off"):
+        return
+
+    def _worker():
+        try:
+            candidates = [
+                shutil.which("termux-notification"),
+                "/data/data/com.termux/files/usr/bin/termux-notification",
+                "/usr/bin/termux-notification"
+            ]
+            termux_notif = next((c for c in candidates if c and os.path.isfile(c) and os.access(c, os.X_OK)), None)
+            if not termux_notif:
+                return
+
+            clean = re.sub(r'<[^>]+>', '', content)
+            clean = re.sub(r'```.*?```', '', clean, flags=re.DOTALL)
+            clean = re.sub(r'[*_#`~>\[\]]', '', clean)
+            lines = [l.strip() for l in clean.splitlines() if l.strip()]
+            summary = lines[0] if lines else "処理が完了しました。"
+            if len(summary) > 80:
+                summary = summary[:77] + "..."
+
+            t3_port = os.environ.get("T3_PORT", "3773")
+            action_url = f"termux-open-url http://127.0.0.1:{t3_port}"
+
+            cmd = [
+                termux_notif,
+                "-i", notif_id,
+                "-t", title,
+                "-c", summary,
+                "--priority", "high",
+                "--sound",
+                "--action", action_url
+            ]
+            subprocess.run(cmd, timeout=5, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            log_debug(f"Sent Android notification: id={notif_id}, title={title}, summary={summary[:30]}")
+        except Exception as e:
+            log_debug(f"Failed to send Android notification: {e}")
+
+    threading.Thread(target=_worker, daemon=True).start()
+
 def load_session_map():
     if os.path.exists(SESSION_MAP_FILE):
         try:
@@ -696,6 +743,8 @@ def get_session_setup_result(session_id=None):
 
 def handle_prompt_worker(session_id, user_text, msg_id, prompt_ctx):
     global current_model, session_map
+    executed_agy = False
+    full_output = ""
     try:
         agy_bin = find_agy_binary()
 
@@ -769,6 +818,7 @@ def handle_prompt_worker(session_id, user_text, msg_id, prompt_ctx):
             return
 
         if agy_bin:
+            executed_agy = True
             agy_conv_id = get_agy_conversation(session_id)
             # 1回目: 選択モデル・セッションID引き継ぎで実行
             cmd = build_agy_cmd(agy_bin, user_text, current_model, conv_id=agy_conv_id)
@@ -875,6 +925,13 @@ def handle_prompt_worker(session_id, user_text, msg_id, prompt_ctx):
             }
         })
         log_debug(f"Finished prompt turn for session {session_id} (msg_id={msg_id}) with stopReason={stop_reason}")
+
+        if executed_agy and stop_reason == "end_turn" and not prompt_ctx.cancelled.is_set():
+            send_android_notification(
+                title="🤖 Antigravity 完了",
+                content=full_output,
+                notif_id="antigravity_task"
+            )
 
 def main():
     global current_model

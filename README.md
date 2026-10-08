@@ -57,6 +57,11 @@ Android 上の **Termux**（Google Play 版 / GitHub Releases 版 / F-Droid 版�
   - 軽量プロキシブリッジ (`scripts/codex_t3_bridge.py`) により、T3 Code のモデル選択画面で Codex モデル（GPT-6-Luna 等）の横にもリアルタイム残量（`[残99%]` 等）を自動付加。
 - 🐙 **GitHub CLI (`gh`) 連携（オプション）**:
   - 公式最新 APT リポジトリから ARM64 向け `gh` を導入。OAuth デバイス認証（`gh auth login`）で Git 認証ヘルパーや Pull Request・Issue 操作を自動完結。
+- 🔔 **Android ネイティブ通知連携 (Termux:API)**:
+  - **Antigravity & Codex 両対応**: AI のタスク・思考処理が完了したタイミングで、Android システムの通知（ヘッドアップ通知・サウンド付き）を自動発行。
+  - **画面 OFF・バックグラウンド完全対応**: ブラウザを閉じたり別アプリを操作していても、Termux のバックグラウンドサービス経由で処理完了を確実に察知。
+  - **タップで即座に復帰**: 通知をタップするだけで Android ブラウザの T3 Code 画面（`http://127.0.0.1:3773`）が自動で開きます。通知トレイが溢れないよう、直前の通知をスマートに上書き管理。
+  - ※ 通知をオフにしたい場合は環境変数 `TERMUX_NOTIFICATION=0` を指定して起動できます。
 - 📱 **直感的な操作コマンド**:
   - `t3-start`、`t3-stop`、`t3-status`、`t3-quota`、`t3-shell`、`codex`、`gh`、`t3-install-codex`、`t3-install-gh` などの Termux コマンドを自動生成。
 
